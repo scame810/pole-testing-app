@@ -17,6 +17,20 @@ export default function LoginPage() {
     router.push("/");
   };
 
+  const resetPassword = async () => {
+    setStatus("Sending reset email...");
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: "https://pole-testing-app.vercel.app/update-password",
+    });
+
+    if (error) {
+      setStatus(error.message);
+    } else {
+      setStatus("Password reset email sent.");
+    }
+  };
+
   return (
     <main className="min-h-screen bg-gray-100 flex items-center justify-center p-6">
       <div className="bg-white rounded-xl shadow p-6 w-full max-w-md">
@@ -42,6 +56,13 @@ export default function LoginPage() {
 
         <button className="bg-blue-600 text-white px-4 py-2 rounded-lg w-full" onClick={signIn} type="button">
           Sign in
+        </button>
+
+        <button
+          onClick={resetPassword}
+          className="text-sm text-blue-600 underline mt-2"
+        >
+          Forgot Password?
         </button>
 
         {status && <div className="text-sm text-gray-700 mt-4">{status}</div>}
