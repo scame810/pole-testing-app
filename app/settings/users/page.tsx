@@ -5,14 +5,19 @@ import { createServerSupabaseClient } from "../../../lib/supabaseServer";
 export default async function UsersPage() {
   const supabase = await createServerSupabaseClient();
 
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth?.user) redirect("/login");
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session?.user) redirect("/login?next=/settings/users");
+
+  const user = session.user;
 
   // Pick current org: simplest = first membership
   const { data: membership, error } = await supabase
     .from("memberships")
     .select("org_id, role")
-    .eq("user_id", auth.user.id)
+    .eq("user_id", user.id)
     .limit(1)
     .maybeSingle();
 

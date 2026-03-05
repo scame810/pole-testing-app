@@ -1,26 +1,50 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import { useRouter, useSearchParams } from "next/navigation";
+import { createSupabaseBrowserClient } from "@/lib/supabaseBrowser";
 
 export default function LoginPage() {
+  const supabase = createSupabaseBrowserClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next") || "/";
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<string>("");
 
   const signIn = async () => {
     setStatus("Signing in...");
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    console.log("signIn error:", error);
+    console.log("signIn user:", data?.user);
+
     if (error) return setStatus(error.message);
-    router.push("/");
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    console.log("session after login:", sessionData.session);
+
+    setStatus("Signed in. Redirecting...");
+    router.replace(next);
+    router.refresh();
+
+    // Fallback in case router doesn't navigate (dev/fast refresh quirks)
+    setTimeout(() => {
+      window.location.href = next;
+    }, 100);
   };
 
   const resetPassword = async () => {
     setStatus("Sending reset email...");
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      // For local testing you may want localhost here too (see note below)
       redirectTo: "https://pole-testing-app.vercel.app/update-password",
     });
 
@@ -54,14 +78,15 @@ export default function LoginPage() {
           onChange={(e) => setPassword(e.target.value)}
         />
 
-        <button className="bg-blue-600 text-white px-4 py-2 rounded-lg w-full" onClick={signIn} type="button">
+        <button
+          className="bg-blue-600 text-white px-4 py-2 rounded-lg w-full"
+          onClick={signIn}
+          type="button"
+        >
           Sign in
         </button>
 
-        <button
-          onClick={resetPassword}
-          className="text-sm text-blue-600 underline mt-2"
-        >
+        <button onClick={resetPassword} className="text-sm text-blue-600 underline mt-2">
           Forgot Password?
         </button>
 

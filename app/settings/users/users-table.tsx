@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { createBrowserSupabaseClient } from "../../../lib/supabaseBrowser";
+import { createSupabaseBrowserClient } from "../../../lib/supabaseBrowser";
 
 type MemberRow = {
   user_id: string;
@@ -17,7 +17,7 @@ export default function UsersTable({
   orgId: string;
   myRole: string;
 }) {
-  const supabase = useMemo(() => createBrowserSupabaseClient(), []);
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [rows, setRows] = useState<MemberRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
