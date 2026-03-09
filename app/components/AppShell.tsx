@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import Image from "next/image";
+import { usePathname, useRouter } from "next/navigation";
+import { createSupabaseBrowserClient } from "@/lib/supabaseBrowser";
 
 const navItems = [
   { href: "/", label: "Dashboard" },
-  { href: "/map", label: "Map" },
   { href: "/reports", label: "Reports" },
   { href: "/settings/users", label: "Users" },
   { href: "/settings", label: "Settings" },
@@ -17,6 +18,14 @@ export default function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const supabase = createSupabaseBrowserClient();
+
+  async function signOut() {
+    await supabase.auth.signOut();
+    router.replace("/login");
+    router.refresh();
+  }
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "#f8fafc" }}>
@@ -25,22 +34,35 @@ export default function AppShell({
           width: 240,
           background: "#0f172a",
           color: "white",
-          padding: 20,
+          padding: 16,
           display: "flex",
           flexDirection: "column",
-          gap: 20,
         }}
       >
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 700 }}>Pole Testing</div>
-          <div style={{ fontSize: 13, color: "#94a3b8", marginTop: 4 }}>
-            Dashboard
-          </div>
+        <div style={{ marginBottom: 20 }}>
+          <Image
+            src="/logo.jpg"
+            alt="Company logo"
+            width={200}
+            height={90}
+            style={{
+              width: "100%",
+              height: "auto",
+              objectFit: "contain",
+            }}
+          />
         </div>
 
-        <nav style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <nav
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
           {navItems.map((item) => {
             const active = pathname === item.href;
+
             return (
               <Link
                 key={item.href}
@@ -59,24 +81,28 @@ export default function AppShell({
             );
           })}
         </nav>
+
+        <button
+          onClick={signOut}
+          style={{
+            marginTop: 16,
+            padding: "10px 12px",
+            borderRadius: 8,
+            border: "none",
+            background: "#1e293b",
+            color: "white",
+            cursor: "pointer",
+            textAlign: "left",
+          }}
+          type="button"
+        >
+          Sign Out
+        </button>
+
+        <div style={{ flexGrow: 1 }} />
       </aside>
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-        <header
-          style={{
-            height: 64,
-            background: "white",
-            borderBottom: "1px solid #e2e8f0",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "0 20px",
-          }}
-        >
-          <div style={{ fontSize: 18, fontWeight: 600 }}>Pole Testing Dashboard</div>
-          <div style={{ fontSize: 14, color: "#64748b" }}>Signed in</div>
-        </header>
-
         <main style={{ padding: 24 }}>{children}</main>
       </div>
     </div>

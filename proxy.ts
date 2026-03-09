@@ -2,7 +2,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
 export async function proxy(request: NextRequest) {
-  let response = NextResponse.next({ request });
+  let response = NextResponse.next({
+    request,
+  });
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -22,7 +24,7 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  // Refresh session if needed
+  // Keep this in proxy.ts
   await supabase.auth.getUser();
 
   return response;
