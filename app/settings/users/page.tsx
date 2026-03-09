@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import UsersTable from "./users-table";
 import { createServerSupabaseClient } from "../../../lib/supabaseServer";
+import InviteForm from "./invite-form";
 
 export default async function UsersPage() {
   const supabase = await createServerSupabaseClient();
@@ -44,7 +45,16 @@ export default async function UsersPage() {
       <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 12 }}>
         User Management
       </h1>
-      <UsersTable orgId={membership.org_id} myRole={membership.role} />
+
+      {membership.role === "owner" && (
+        <InviteForm orgId={membership.org_id} />
+      )}
+
+      <UsersTable
+        orgId={membership.org_id}
+        myRole={membership.role}
+      />
     </div>
   );
+
 }
