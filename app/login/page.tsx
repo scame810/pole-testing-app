@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabaseBrowser";
 
-export default function LoginPage() {
+function LoginInner() {
   const supabase = createSupabaseBrowserClient();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -34,7 +34,6 @@ export default function LoginPage() {
     router.replace(next);
     router.refresh();
 
-    // Fallback in case router doesn't navigate (dev/fast refresh quirks)
     setTimeout(() => {
       window.location.href = next;
     }, 100);
@@ -44,8 +43,7 @@ export default function LoginPage() {
     setStatus("Sending reset email...");
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      // For local testing you may want localhost here too (see note below)
-      redirectTo: "https://pole-testing-app.vercel.app/update-password",
+      redirectTo: `${window.location.origin}/update-password`,
     });
 
     if (error) {
@@ -86,12 +84,24 @@ export default function LoginPage() {
           Sign in
         </button>
 
-        <button onClick={resetPassword} className="text-sm text-blue-600 underline mt-2">
+        <button
+          onClick={resetPassword}
+          className="text-sm text-blue-600 underline mt-2"
+          type="button"
+        >
           Forgot Password?
         </button>
 
         {status && <div className="text-sm text-gray-700 mt-4">{status}</div>}
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 24 }}>Loading...</div>}>
+      <LoginInner />
+    </Suspense>
   );
 }
