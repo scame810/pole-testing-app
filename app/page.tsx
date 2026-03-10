@@ -75,6 +75,13 @@ function getPageNumbers(current: number, total: number): Array<number | "..."> {
   return [1, "...", current - 1, current, current + 1, "...", total];
 }
 
+function stripProtectedColumns(row: Row): Row {
+  const copy = { ...row };
+  delete copy["Comments"];
+  delete copy["comments"];
+  return copy;
+}
+
 export default function Home() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const router = useRouter();
@@ -106,6 +113,9 @@ export default function Home() {
 
   const canImport = activeRole === "owner";
   const canEditComments = activeRole === "owner" || activeRole === "member";
+  const [commentSaveStatus, setCommentSaveStatus] = useState<
+    Record<string, "idle" | "saving" | "saved" | "error">
+  >({});
 
   useEffect(() => {
     let mounted = true;
@@ -166,6 +176,8 @@ export default function Home() {
   function saveCommentToSupabase(poleId: string, comment: string) {
     if (saveTimersRef.current[poleId]) clearTimeout(saveTimersRef.current[poleId]);
 
+    setCommentSaveStatus((prev) => ({ ...prev, [poleId]: "saving" }));
+
     saveTimersRef.current[poleId] = setTimeout(async () => {
       try {
         if (!activeOrgId) throw new Error("No activeOrgId selected");
@@ -179,8 +191,17 @@ export default function Home() {
         if (error) throw error;
 
         setCommentsByPole((prev) => ({ ...prev, [poleId]: comment }));
+        setCommentSaveStatus((prev) => ({ ...prev, [poleId]: "saved" }));
+
+        setTimeout(() => {
+          setCommentSaveStatus((prev) => ({
+            ...prev,
+            [poleId]: prev[poleId] === "saved" ? "idle" : prev[poleId],
+          }));
+        }, 1500);
       } catch (e) {
         console.error("Save comment failed:", e);
+        setCommentSaveStatus((prev) => ({ ...prev, [poleId]: "error" }));
       }
     }, 500);
   }
@@ -667,7 +688,9 @@ export default function Home() {
       skipEmptyLines: true,
       transformHeader: (h) => h.trim(),
       complete: async (results) => {
-        const rows = (results.data || []).filter((r) => Object.keys(r || {}).length > 0);
+        const rows = (results.data || [])
+          .map((r) => stripProtectedColumns(r))
+          .filter((r) => Object.keys(r || {}).length > 0);
 
         const errors = validateMainRows(rows);
         if (errors.length) {
@@ -720,7 +743,9 @@ export default function Home() {
       skipEmptyLines: true,
       transformHeader: (h) => h.trim(),
       complete: async (results) => {
-        const rows = (results.data || []).filter((r) => Object.keys(r || {}).length > 0);
+        const rows = (results.data || [])
+          .map((r) => stripProtectedColumns(r))
+          .filter((r) => Object.keys(r || {}).length > 0);
 
         (async () => {
           try {
@@ -785,6 +810,7 @@ export default function Home() {
     setSelectedPoleId(null);
     setStatus("");
     setCommentsByPole({});
+    setCommentSaveStatus({});
   };
 
   const allCurrentPageSelected =
@@ -1180,9 +1206,22 @@ export default function Home() {
 
                         if (h === "Comments") {
                           const val = commentsByPole[poleId] ?? "";
+                          const saveState = commentSaveStatus[poleId] ?? "idle";
 
                           return (
                             <td key={h} className="border p-2 align-top min-w-[220px]">
+                              <div className="mb-1 text-xs">
+                                {saveState === "saving" && (
+                                  <span className="text-amber-600 font-medium">Saving...</span>
+                                )}
+                                {saveState === "saved" && (
+                                  <span className="text-[#094929] font-medium">Saved</span>
+                                )}
+                                {saveState === "error" && (
+                                  <span className="text-red-600 font-medium">Save failed</span>
+                                )}
+                              </div>
+
                               {canEditComments ? (
                                 <textarea
                                   value={val}
@@ -1191,7 +1230,7 @@ export default function Home() {
                                     setCommentsByPole((prev) => ({ ...prev, [poleId]: next }));
                                     if (poleId) saveCommentToSupabase(poleId, next);
                                   }}
-                                  placeholder="Add notes…"
+                                  placeholder="Add notes..."
                                   className="w-full min-h-[60px] p-2 border rounded-md text-sm"
                                 />
                               ) : (
