@@ -92,6 +92,7 @@ export default function Home() {
   const [supabaseStatus, setSupabaseStatus] = useState("not run");
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [dataByPoleId, setDataByPoleId] = useState<Record<string, any>>({});
+  const [selectedPoleIds, setSelectedPoleIds] = useState<Record<string, boolean>>({});
   const [ownerOrgs, setOwnerOrgs] = useState<{ org_id: string; name?: string }[]>([]);
   const [activeRole, setActiveRole] = useState<"owner" | "member" | "viewer" | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -454,6 +455,42 @@ export default function Home() {
     URL.revokeObjectURL(url);
   };
 
+  const exportSelectedCsv = () => {
+    const selectedRows = mergedRows.filter((row) => {
+      const id = getPoleId(row) ?? "";
+      return !!selectedPoleIds[id];
+    });
+
+    if (selectedRows.length === 0) return;
+
+    const rowsWithComments = selectedRows.map((row) => {
+      const id = getPoleId(row) ?? "";
+      return {
+        ...row,
+        Comments: commentsByPole[id] ?? "",
+      };
+    });
+
+    const ordered = rowsWithComments.map((r) => {
+      const out: Record<string, any> = {};
+      for (const h of tableHeaders) out[h] = (r as any)?.[h] ?? "";
+      return out;
+    });
+
+    const csv = Papa.unparse(ordered);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `selected-poles-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    URL.revokeObjectURL(url);
+  };
+
   const mergedRows = useMemo(() => {
     if (mainRows.length === 0) return [];
     return mainRows.map((r) => {
@@ -490,6 +527,8 @@ export default function Home() {
 
     return rows;
   }, [mergedRows, sortColumn, sortDirection]);
+
+  const selectedCount = Object.values(selectedPoleIds).filter(Boolean).length;
 
   const totalRows = sortedRows.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / rowsPerPage));
@@ -748,6 +787,13 @@ export default function Home() {
     setCommentsByPole({});
   };
 
+  const allCurrentPageSelected =
+  paginatedRows.length > 0 &&
+  paginatedRows.every((row) => {
+    const id = getPoleId(row) ?? "";
+    return !!selectedPoleIds[id];
+  });
+
   return (
   <AppShell>
     <div className="min-h-screen bg-gray-100 p-3 sm:p-4 md:p-6 lg:p-8">
@@ -776,6 +822,15 @@ export default function Home() {
               {roleLabel}
             </span>
           )}
+
+          <button
+            className="bg-[#094929] text-white px-4 py-2 rounded-lg hover:bg-[#0c5a33] disabled:opacity-50"
+            onClick={exportSelectedCsv}
+            type="button"
+            disabled={selectedCount === 0}
+          >
+            Export Selected ({selectedCount})
+          </button>
 
           <button
             className="bg-[#094929] text-white px-4 py-2 rounded-lg hover:bg-[#0c5a33] disabled:opacity-50"
@@ -952,8 +1007,7 @@ export default function Home() {
 
           {points.length === 0 ? (
             <p className="text-sm text-gray-600">
-              No map points yet. Your CSV must include valid Latitude and Longitude columns
-              (numbers).
+              No map points yet. Your CSV must include valid Latitude and Longitude columns.
             </p>
           ) : (
             <div className="w-full h-[280px] sm:h-[340px] md:h-[420px] lg:h-[500px] border border-gray-200 rounded-lg overflow-hidden">
@@ -966,7 +1020,7 @@ export default function Home() {
           )}
 
           <p className="text-sm text-gray-600 mt-3">
-            Tip: Click a marker to select a pole. We can highlight/scroll the matching row next.
+            Tip: Click a marker to select a pole.
           </p>
         </div>
 
@@ -1043,8 +1097,27 @@ export default function Home() {
             <p className="text-center p-4 text-gray-500">No data uploaded yet.</p>
           ) : (
             <table className="min-w-full border border-gray-300 text-sm">
+
               <thead className="sticky top-0 z-10 bg-gray-200">
                 <tr>
+                  <th className="border p-2 whitespace-nowrap">
+                    <input
+                      type="checkbox"
+                      checked={allCurrentPageSelected}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setSelectedPoleIds((prev) => {
+                          const next = { ...prev };
+                          for (const row of paginatedRows) {
+                            const id = getPoleId(row) ?? "";
+                            if (id) next[id] = checked;
+                          }
+                          return next;
+                        });
+                      }}
+                    />
+                  </th>
+
                   {tableHeaders.map((h) => (
                     <th
                       key={h}
@@ -1067,7 +1140,7 @@ export default function Home() {
                     </th>
                   ))}
                 </tr>
-              </thead>
+                </thead>
 
               <tbody>
                 {paginatedRows.map((row, idx) => {
@@ -1087,6 +1160,21 @@ export default function Home() {
                           : "bg-gray-50")
                       }
                     >
+                      <td className="border p-2 align-top">
+                        <input
+                          type="checkbox"
+                          checked={!!selectedPoleIds[poleId]}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setSelectedPoleIds((prev) => ({
+                              ...prev,
+                              [poleId]: checked,
+                            }));
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </td>
+
                       {tableHeaders.map((h) => {
                         const raw = row?.[h];
 
