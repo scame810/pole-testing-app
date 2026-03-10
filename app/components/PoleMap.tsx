@@ -32,6 +32,49 @@ function escapeHtml(s: string) {
     .replace(/'/g, "&#039;");
 }
 
+function getPhiValue(data?: Record<string, any>): number | null {
+  if (!data) return null;
+
+  const raw =
+    data["Pole Health Index(PHI)"] ??
+    data["Pole Health/PHI"] ??
+    data["PHI"] ??
+    null;
+
+  if (raw === null || raw === undefined || String(raw).trim() === "") return null;
+
+  const n = Number(String(raw).replace(/,/g, "").trim());
+  return Number.isFinite(n) ? n : null;
+}
+
+function getMarkerColor(data?: Record<string, any>) {
+  const phi = getPhiValue(data);
+
+  if (phi === null) return "#2563eb"; // blue fallback
+  if (phi < 80) return "#dc2626"; // red
+  if (phi <= 94) return "#eab308"; // yellow
+  return "#16a34a"; // green (95+)
+}
+
+function makeColorIcon(color: string) {
+  return L.divIcon({
+    className: "",
+    html: `
+      <div style="
+        width: 18px;
+        height: 18px;
+        border-radius: 9999px;
+        background: ${color};
+        border: 2px solid white;
+        box-shadow: 0 0 0 1px rgba(0,0,0,0.35);
+      "></div>
+    `,
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+    popupAnchor: [0, -10],
+  });
+}
+
 function buildPopupHtml(pole: Record<string, any>) {
   const id = pole["Pole ID"] ?? pole["PoleID"] ?? pole["id"] ?? "";
 
@@ -95,8 +138,6 @@ function SelectedController({
     if (!p) return;
 
     const zoom = 19;
-
-    // Push marker down based on map height so popup fits above
     const mapH = map.getSize().y;
     const yOffset = -Math.round(mapH * 0.32);
 
@@ -111,18 +152,35 @@ function SelectedController({
 
         const clusterGroup = clusterGroupRef.current;
 
-        // If marker is inside a cluster, expand to show it before opening popup
         if (clusterGroup?.zoomToShowLayer) {
           clusterGroup.zoomToShowLayer(marker, () => marker.openPopup());
         } else {
           marker.openPopup();
         }
 
-        // slight extra nudge
         map.panBy([0, -40], { animate: true });
       });
     });
   }, [selectedId, points, map, markerRefs, clusterGroupRef]);
+
+  return null;
+}
+
+function ZoomToAllController({
+  points,
+  trigger,
+}: {
+  points: PolePoint[];
+  trigger: number;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!points.length) return;
+
+    const bounds = L.latLngBounds(points.map((p) => [p.lat, p.lng] as [number, number]));
+    map.fitBounds(bounds, { padding: [30, 30] });
+  }, [map, points, trigger]);
 
   return null;
 }
@@ -140,7 +198,6 @@ function ClusterLayer({
 }) {
   const map = useMap();
 
-  // Keep onSelect stable so ClusterLayer doesn't rebuild every render
   const onSelectRef = useRef(onSelect);
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -154,11 +211,16 @@ function ClusterLayer({
     clusterGroupRef.current = clusterGroup;
 
     points.forEach((p) => {
-      const marker = L.marker([p.lat, p.lng], { icon: DefaultIcon });
+      const markerColor = getMarkerColor(p.data);
+      const marker = L.marker([p.lat, p.lng], {
+        icon: makeColorIcon(markerColor),
+      });
 
       marker.on("click", () => onSelectRef.current(p.id));
 
-      const html = buildPopupHtml(p.data ?? { id: p.id, label: p.label, lat: p.lat, lng: p.lng });
+      const html = buildPopupHtml(
+        p.data ?? { id: p.id, label: p.label, lat: p.lat, lng: p.lng }
+      );
       marker.bindPopup(html, { maxWidth: 360, autoPan: false });
 
       markerRefs.current.set(p.id, marker);
@@ -185,10 +247,12 @@ export default function PoleMap({
   points,
   selected,
   onSelect,
+  zoomToAllTrigger = 0,
 }: {
   points: PolePoint[];
   selected?: PolePoint | null;
   onSelect: (id: string) => void;
+  zoomToAllTrigger?: number;
 }) {
   const markerRefs = useRef<Map<string, L.Marker>>(new Map());
   const clusterGroupRef = useRef<any | null>(null);
@@ -196,24 +260,27 @@ export default function PoleMap({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  // Force a clean remount when dataset changes
   const mapKey = useMemo(() => {
     const first = points?.[0]?.id ?? "none";
     return `${points.length}-${first}`;
   }, [points]);
 
-  const center: [number, number] =
-    selected
-      ? [selected.lat, selected.lng]
-      : points.length
-      ? [points[0].lat, points[0].lng]
-      : [39, -98];
+  const center: [number, number] = selected
+    ? [selected.lat, selected.lng]
+    : points.length
+    ? [points[0].lat, points[0].lng]
+    : [39, -98];
 
   if (!mounted) return <div className="w-full h-[500px]" />;
 
   return (
     <div className="w-full h-[500px]">
-      <MapContainer key={mapKey} center={center} zoom={selected ? 16 : 5} className="w-full h-full">
+      <MapContainer
+        key={mapKey}
+        center={center}
+        zoom={selected ? 16 : 5}
+        className="w-full h-full"
+      >
         <TileLayer
           attribution="&copy; OpenStreetMap contributors"
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -232,6 +299,8 @@ export default function PoleMap({
           markerRefs={markerRefs}
           clusterGroupRef={clusterGroupRef}
         />
+
+        <ZoomToAllController points={points} trigger={zoomToAllTrigger} />
       </MapContainer>
     </div>
   );

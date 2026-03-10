@@ -42,6 +42,7 @@ type PolePoint = {
   lat: number;
   lng: number;
   label?: string;
+  data?: Record<string, any>;
 };
 
 function looksLikeUrl(s: string) {
@@ -116,6 +117,8 @@ export default function Home() {
   const [commentSaveStatus, setCommentSaveStatus] = useState<
     Record<string, "idle" | "saving" | "saved" | "error">
   >({});
+  const [poleSearch, setPoleSearch] = useState("");
+  const [zoomToAllTrigger, setZoomToAllTrigger] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -583,14 +586,26 @@ export default function Home() {
         lat,
         lng,
         label: String(r["Pole ID"] ?? id),
+        data: r,
       };
     })
     .filter(Boolean) as PolePoint[];
 }, [mergedRows]);
 
+  const filteredPoints = useMemo(() => {
+    const q = poleSearch.trim().toLowerCase();
+    if (!q) return points;
+
+    return points.filter((p) => {
+      const id = p.id.toLowerCase();
+      const label = String(p.label ?? "").toLowerCase();
+      return id.includes(q) || label.includes(q);
+    });
+  }, [points, poleSearch]);
+
   const selectedPoint = useMemo(
-    () => points.find((p) => p.id === selectedPoleId) ?? null,
-    [points, selectedPoleId]
+    () => filteredPoints.find((p) => p.id === selectedPoleId) ?? null,
+    [filteredPoints, selectedPoleId]
   );
 
   useEffect(() => {
@@ -1016,6 +1031,42 @@ export default function Home() {
         </div>
       )}
 
+      <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <input
+            type="text"
+            value={poleSearch}
+            onChange={(e) => setPoleSearch(e.target.value)}
+            placeholder="Search Pole ID..."
+            className="w-full sm:w-[280px] rounded-md border px-3 py-2 text-sm"
+          />
+
+          <button
+            type="button"
+            onClick={() => setZoomToAllTrigger((n) => n + 1)}
+            className="rounded-md bg-[#094929] px-4 py-2 text-sm text-white hover:bg-[#0c5a33]"
+          >
+            Zoom Out to All Poles
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setPoleSearch("");
+              setSelectedPoleId(null);
+              setZoomToAllTrigger((n) => n + 1);
+            }}
+            className="rounded-md bg-gray-100 px-4 py-2 text-sm hover:bg-gray-200"
+          >
+            Clear Search
+          </button>
+        </div>
+
+        <div className="text-sm text-gray-500">
+          Showing {filteredPoints.length} of {points.length} poles
+        </div>
+      </div>
+
         <div className="bg-white rounded-xl shadow p-4 sm:p-5 md:p-6 mb-4 md:mb-6">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold">Map View</h2>
@@ -1031,16 +1082,17 @@ export default function Home() {
             )}
           </div>
 
-          {points.length === 0 ? (
+          {filteredPoints.length === 0 ? (
             <p className="text-sm text-gray-600">
-              No map points yet. Your CSV must include valid Latitude and Longitude columns.
+              No map points match your search, or your CSV is missing valid Latitude and Longitude columns.
             </p>
           ) : (
             <div className="w-full h-[280px] sm:h-[340px] md:h-[420px] lg:h-[500px] border border-gray-200 rounded-lg overflow-hidden">
               <PoleMap
-                points={points}
+                points={filteredPoints}
                 selected={selectedPoint}
                 onSelect={(id: string) => setSelectedPoleId(id)}
+                zoomToAllTrigger={zoomToAllTrigger}
               />
             </div>
           )}
