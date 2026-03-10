@@ -42,7 +42,6 @@ type PolePoint = {
   lat: number;
   lng: number;
   label?: string;
-  data?: Record<string, any>;
 };
 
 function looksLikeUrl(s: string) {
@@ -60,6 +59,22 @@ function normalizeUrl(s: string) {
   return trimmed;
 }
 
+function getPageNumbers(current: number, total: number): Array<number | "..."> {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+
+  if (current <= 4) {
+    return [1, 2, 3, 4, 5, "...", total];
+  }
+
+  if (current >= total - 3) {
+    return [1, "...", total - 4, total - 3, total - 2, total - 1, total];
+  }
+
+  return [1, "...", current - 1, current, current + 1, "...", total];
+}
+
 export default function Home() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const router = useRouter();
@@ -72,6 +87,8 @@ export default function Home() {
   const [commentsByPole, setCommentsByPole] = useState<Record<string, string>>({});
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
   const [supabaseStatus, setSupabaseStatus] = useState("not run");
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [dataByPoleId, setDataByPoleId] = useState<Record<string, any>>({});
@@ -474,30 +491,42 @@ export default function Home() {
     return rows;
   }, [mergedRows, sortColumn, sortDirection]);
 
+  const totalRows = sortedRows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / rowsPerPage));
+
+  const paginatedRows = useMemo(() => {
+    const start = (currentPage - 1) * rowsPerPage;
+    const end = start + rowsPerPage;
+    return sortedRows.slice(start, end);
+  }, [sortedRows, currentPage, rowsPerPage]);
+  const pageNumbers = getPageNumbers(currentPage, totalPages);
+
+  const startRow = totalRows === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1;
+  const endRow = Math.min(currentPage * rowsPerPage, totalRows);
+
   const points = useMemo<PolePoint[]>(() => {
-    return mergedRows
-      .map((r) => {
-        const id = getPoleId(r);
-        if (!id) return null;
+  return mergedRows
+    .map((r) => {
+      const id = getPoleId(r);
+      if (!id) return null;
 
-        const latKey = LAT_KEYS.find((k) => r?.[k] !== undefined);
-        const lngKey = LNG_KEYS.find((k) => r?.[k] !== undefined);
+      const latKey = LAT_KEYS.find((k) => r?.[k] !== undefined);
+      const lngKey = LNG_KEYS.find((k) => r?.[k] !== undefined);
 
-        const lat = getNumber(latKey ? r[latKey] : null);
-        const lng = getNumber(lngKey ? r[lngKey] : null);
+      const lat = getNumber(latKey ? r[latKey] : null);
+      const lng = getNumber(lngKey ? r[lngKey] : null);
 
-        if (lat === null || lng === null) return null;
+      if (lat === null || lng === null) return null;
 
-        return {
-          id,
-          lat,
-          lng,
-          label: String(r["Pole ID"] ?? id),
-          data: r,
-        };
-      })
-      .filter(Boolean) as PolePoint[];
-  }, [mergedRows]);
+      return {
+        id,
+        lat,
+        lng,
+        label: String(r["Pole ID"] ?? id),
+      };
+    })
+    .filter(Boolean) as PolePoint[];
+}, [mergedRows]);
 
   const selectedPoint = useMemo(
     () => points.find((p) => p.id === selectedPoleId) ?? null,
@@ -518,6 +547,14 @@ export default function Home() {
       });
     }
   }, [selectedPoleId]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [sortColumn, sortDirection, rowsPerPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [mergedRows.length]);
 
   const tableHeaders = useMemo(() => {
     if (mergedRows.length === 0) return [];
@@ -713,8 +750,8 @@ export default function Home() {
 
   return (
   <AppShell>
-    <div className="min-h-screen bg-gray-100 p-8">
-      <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+    <div className="min-h-screen bg-gray-100 p-3 sm:p-4 md:p-6 lg:p-8">
+      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-3xl font-bold">Pole Testing Dashboard</h1>
@@ -752,7 +789,7 @@ export default function Home() {
       </div>
 
       {isOwner && (
-        <div className="bg-white rounded-xl shadow p-6 mb-6">
+        <div className="bg-white rounded-xl shadow p-4 sm:p-5 md:p-6 mb-4 md:mb-6">
           <p className="text-gray-600">Upload pole testing reports below.</p>
 
           <div className="mt-4 flex flex-wrap gap-3 items-center">
@@ -772,7 +809,7 @@ export default function Home() {
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-700">Org:</span>
                 <select
-                  className="border rounded-md p-2 text-sm"
+                  className="w-full sm:w-[260px] border rounded-md p-2 text-sm"
                   value={activeOrgId ?? ""}
                   onChange={async (e) => {
                     const nextOrg = e.target.value;
@@ -832,7 +869,7 @@ export default function Home() {
             {activeOrgId && (
               <div className="flex flex-wrap items-center gap-2">
                 <input
-                  className="border rounded-md p-2 text-sm"
+                  className="w-full sm:w-[260px] border rounded-md p-2 text-sm"
                   placeholder="Invite employee email"
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
@@ -898,7 +935,7 @@ export default function Home() {
         </div>
       )}
 
-        <div className="bg-white rounded-xl shadow p-6 mb-6">
+        <div className="bg-white rounded-xl shadow p-4 sm:p-5 md:p-6 mb-4 md:mb-6">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold">Map View</h2>
 
@@ -919,7 +956,7 @@ export default function Home() {
               (numbers).
             </p>
           ) : (
-            <div className="w-full h-[500px] border border-gray-200 rounded-lg overflow-hidden">
+            <div className="w-full h-[280px] sm:h-[340px] md:h-[420px] lg:h-[500px] border border-gray-200 rounded-lg overflow-hidden">
               <PoleMap
                 points={points}
                 selected={selectedPoint}
@@ -933,107 +970,179 @@ export default function Home() {
           </p>
         </div>
 
-        <div
-          ref={tableContainerRef}
-          className="bg-white rounded-xl shadow p-6 overflow-x-auto max-h-[500px] overflow-y-auto"
-        >
+        <div className="bg-white rounded-xl shadow p-4 sm:p-5 md:p-6 mb-4 md:mb-6">
+          <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
+              <span>
+                Showing {startRow} to {endRow} of {totalRows} rows
+              </span>
+
+              <select
+                value={rowsPerPage}
+                onChange={(e) => setRowsPerPage(Number(e.target.value))}
+                className="rounded-md border px-2 py-1 text-sm"
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+
+              <span>rows per page</span>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="rounded border px-3 py-2 text-sm disabled:opacity-50"
+              >
+                ‹
+              </button>
+
+              {pageNumbers.map((page, idx) =>
+                page === "..." ? (
+                  <span key={`ellipsis-${idx}`} className="px-2 text-sm text-gray-500">
+                    ...
+                  </span>
+                ) : (
+                  <button
+                    key={`${page}-${idx}`}
+                    type="button"
+                    onClick={() => setCurrentPage(Number(page))}
+                    className={
+                      "min-w-[40px] rounded border px-3 py-2 text-sm " +
+                      (currentPage === page
+                        ? "bg-gray-300 font-semibold"
+                        : "bg-white hover:bg-gray-100")
+                    }
+                  >
+                    {page}
+                  </button>
+                )
+              )}
+
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="rounded border px-3 py-2 text-sm disabled:opacity-50"
+              >
+                ›
+              </button>
+            </div>
+          </div>
+
+          <div
+            ref={tableContainerRef}
+            className="overflow-x-auto max-h-[500px] overflow-y-auto"
+          >
+
           {mergedRows.length === 0 ? (
             <p className="text-center p-4 text-gray-500">No data uploaded yet.</p>
           ) : (
             <table className="min-w-full border border-gray-300 text-sm">
-              <thead className="bg-gray-200">
+              <thead className="sticky top-0 z-10 bg-gray-200">
                 <tr>
                   {tableHeaders.map((h) => (
                     <th
-                    key={h}
-                    className="border p-2 whitespace-nowrap cursor-pointer select-none hover:bg-gray-300"
-                    onClick={() => {
-                      if (sortColumn === h) {
-                        setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-                      } else {
-                        setSortColumn(h);
-                        setSortDirection("asc");
-                      }
-                    }}
-                  >
-                    {h}
-
-                    {sortColumn === h && (
-                      <span className="ml-1">
-                        {sortDirection === "asc" ? "▲" : "▼"}
-                      </span>
-                    )}
-                  </th>
-                ))}
-              </tr>
-            </thead>
+                      key={h}
+                      className="border p-2 whitespace-nowrap cursor-pointer select-none hover:bg-gray-300"
+                      onClick={() => {
+                        if (sortColumn === h) {
+                          setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+                        } else {
+                          setSortColumn(h);
+                          setSortDirection("asc");
+                        }
+                      }}
+                    >
+                      {h}
+                      {sortColumn === h && (
+                        <span className="ml-1">
+                          {sortDirection === "asc" ? "▲" : "▼"}
+                        </span>
+                      )}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
 
               <tbody>
-                {sortedRows.map((row, idx) => (
-                  <tr
-                    key={idx}
-                    data-pole-id={getPoleId(row) ?? ""}
-                    onClick={() => setSelectedPoleId(getPoleId(row))}
-                    className={
-                      "cursor-pointer transition-colors " +
-                      (getPoleId(row) === selectedPoleId ? "bg-yellow-100" : "")
-                    }
-                  >
-                    {tableHeaders.map((h) => {
-                      const poleId = getPoleId(row) ?? "";
-                      const raw = row?.[h];
+                {paginatedRows.map((row, idx) => {
+                  const poleId = getPoleId(row) ?? "";
 
-                      if (h === "Comments") {
-                        const val = commentsByPole[poleId] ?? "";
+                  return (
+                    <tr
+                      key={`${poleId}-${idx}`}
+                      data-pole-id={poleId}
+                      onClick={() => setSelectedPoleId(poleId || null)}
+                      className={
+                        "cursor-pointer transition-colors " +
+                        (poleId === selectedPoleId
+                          ? "bg-yellow-100"
+                          : idx % 2 === 0
+                          ? "bg-white"
+                          : "bg-gray-50")
+                      }
+                    >
+                      {tableHeaders.map((h) => {
+                        const raw = row?.[h];
+
+                        if (h === "Comments") {
+                          const val = commentsByPole[poleId] ?? "";
+
+                          return (
+                            <td key={h} className="border p-2 align-top min-w-[220px]">
+                              {canEditComments ? (
+                                <textarea
+                                  value={val}
+                                  onChange={(e) => {
+                                    const next = e.target.value;
+                                    setCommentsByPole((prev) => ({ ...prev, [poleId]: next }));
+                                    if (poleId) saveCommentToSupabase(poleId, next);
+                                  }}
+                                  placeholder="Add notes…"
+                                  className="w-full min-h-[60px] p-2 border rounded-md text-sm"
+                                />
+                              ) : (
+                                <div className="w-full min-h-[60px] p-2 border rounded-md text-sm bg-gray-50 whitespace-pre-wrap">
+                                  {val || ""}
+                                </div>
+                              )}
+                            </td>
+                          );
+                        }
+
+                        const value = String(raw ?? "").trim();
+                        const isUrl = looksLikeUrl(value);
+                        const href = isUrl ? normalizeUrl(value) : "";
 
                         return (
-                          <td key={h} className="border p-2 align-top min-w-[220px]">
-                            {canEditComments ? (
-                              <textarea
-                                value={val}
-                                onChange={(e) => {
-                                  const next = e.target.value;
-                                  setCommentsByPole((prev) => ({ ...prev, [poleId]: next }));
-                                  if (poleId) saveCommentToSupabase(poleId, next);
-                                }}
-                                placeholder="Add notes…"
-                                className="w-full min-h-[60px] p-2 border rounded-md text-sm"
-                              />
+                          <td key={h} className="border p-2 align-top">
+                            {h === "Images" && isUrl ? (
+                              <a
+                                href={href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 underline"
+                              >
+                                Open Photos
+                              </a>
                             ) : (
-                              <div className="w-full min-h-[60px] p-2 border rounded-md text-sm bg-gray-50 whitespace-pre-wrap">
-                                {val || ""}
-                              </div>
+                              value
                             )}
                           </td>
                         );
-                      }
-
-                      const value = String(raw ?? "").trim();
-                      const isUrl = looksLikeUrl(value);
-                      const href = isUrl ? normalizeUrl(value) : "";
-
-                      return (
-                        <td key={h} className="border p-2 align-top">
-                          {h === "Images" && isUrl ? (
-                            <a
-                              href={href}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-600 underline"
-                            >
-                              Open Photos
-                            </a>
-                          ) : (
-                            value
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                      })}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </AppShell>

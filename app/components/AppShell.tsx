@@ -31,10 +31,10 @@ export default function AppShell({
     <div style={{ display: "flex", minHeight: "100vh", background: "#f8fafc" }}>
       <aside
         style={{
-          width: 240,
+          width: "clamp(120px, 16vw, 220px)",
           background: "#0f172a",
           color: "white",
-          padding: 16,
+          padding: 12,
           display: "flex",
           flexDirection: "column",
         }}
