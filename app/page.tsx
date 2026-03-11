@@ -138,7 +138,7 @@ export default function Home() {
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [currentPage, setCurrentPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [rowsPerPage, setRowsPerPage] = useState<number | "all">(10);
   const [supabaseStatus, setSupabaseStatus] = useState("not run");
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [dataByPoleId, setDataByPoleId] = useState<Record<string, any>>({});
@@ -615,18 +615,24 @@ export default function Home() {
   }, [sortedRows, phiFilter, dateFilter]);
 
   const totalRows = filteredTableRows.length;
-  const totalPages = Math.max(1, Math.ceil(totalRows / rowsPerPage));
+  const totalPages =
+    rowsPerPage === "all" ? 1 : Math.max(1, Math.ceil(totalRows / rowsPerPage));
 
   const paginatedRows = useMemo(() => {
+    if (rowsPerPage === "all") return filteredTableRows;
+
     const start = (currentPage - 1) * rowsPerPage;
     const end = start + rowsPerPage;
     return filteredTableRows.slice(start, end);
   }, [filteredTableRows, currentPage, rowsPerPage]);
 
-  const pageNumbers = getPageNumbers(currentPage, totalPages);
+  const startRow =
+    totalRows === 0 ? 0 : rowsPerPage === "all" ? 1 : (currentPage - 1) * rowsPerPage + 1;
 
-  const startRow = totalRows === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1;
-  const endRow = Math.min(currentPage * rowsPerPage, totalRows);
+  const endRow =
+    rowsPerPage === "all" ? totalRows : Math.min(currentPage * rowsPerPage, totalRows);
+
+  const pageNumbers = getPageNumbers(currentPage, totalPages);
 
   const points = useMemo<PolePoint[]>(() => {
   return mergedRows
@@ -1206,7 +1212,7 @@ export default function Home() {
               Filtered results: {filteredTableRows.length}
             </div>
         </div>
-        
+
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
               <span>
@@ -1215,18 +1221,23 @@ export default function Home() {
 
               <select
                 value={rowsPerPage}
-                onChange={(e) => setRowsPerPage(Number(e.target.value))}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setRowsPerPage(value === "all" ? "all" : Number(value));
+                }}
                 className="rounded-md border px-2 py-1 text-sm"
               >
                 <option value={10}>10</option>
                 <option value={25}>25</option>
                 <option value={50}>50</option>
                 <option value={100}>100</option>
+                <option value="all">All</option>
               </select>
 
               <span>rows per page</span>
             </div>
 
+          {rowsPerPage !== "all" && (
             <div className="flex items-center gap-1">
               <button
                 type="button"
@@ -1268,7 +1279,8 @@ export default function Home() {
                 ›
               </button>
             </div>
-          </div>
+          )}
+        </div>
 
           <div
             ref={tableContainerRef}
