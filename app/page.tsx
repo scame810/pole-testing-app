@@ -83,6 +83,48 @@ function stripProtectedColumns(row: Row): Row {
   return copy;
 }
 
+function getPhiValue(row: Row): number | null {
+  const raw =
+    row["Pole Health Index(PHI)"] ??
+    row["Pole Health/PHI"] ??
+    row["PHI"] ??
+    null;
+
+  if (raw === null || raw === undefined || String(raw).trim() === "") return null;
+
+  const n = Number(String(raw).replace(/,/g, "").trim());
+  return Number.isFinite(n) ? n : null;
+}
+
+function rowMatchesDate(row: Row, selectedDate: string): boolean {
+  if (!selectedDate) return true;
+
+  const raw =
+    row["Date Tested"] ??
+    row["date tested"] ??
+    row["Date"] ??
+    null;
+
+  if (raw === null || raw === undefined) return false;
+
+  const value = String(raw).trim();
+  if (!value) return false;
+
+  // Match exact YYYY-MM-DD if already formatted that way
+  if (value === selectedDate) return true;
+
+  // Try parsing common CSV date values
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return false;
+
+  const yyyy = parsed.getFullYear();
+  const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+  const dd = String(parsed.getDate()).padStart(2, "0");
+  const normalized = `${yyyy}-${mm}-${dd}`;
+
+  return normalized === selectedDate;
+}
+
 export default function Home() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const router = useRouter();
@@ -105,6 +147,8 @@ export default function Home() {
   const [activeRole, setActiveRole] = useState<"owner" | "member" | "viewer" | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteStatus, setInviteStatus] = useState("");
+  const [phiFilter, setPhiFilter] = useState<"all" | "lt80" | "80to94" | "gte95">("all");
+  const [dateFilter, setDateFilter] = useState("");
   const saveTimersRef = useRef<Record<string, any>>({});
 
   const isOwner = activeRole === "owner";
@@ -554,14 +598,31 @@ export default function Home() {
 
   const selectedCount = Object.values(selectedPoleIds).filter(Boolean).length;
 
-  const totalRows = sortedRows.length;
+  const filteredTableRows = useMemo(() => {
+    return sortedRows.filter((row) => {
+      const phi = getPhiValue(row);
+
+      const matchesPhi =
+        phiFilter === "all" ||
+        (phiFilter === "lt80" && phi !== null && phi < 80) ||
+        (phiFilter === "80to94" && phi !== null && phi >= 80 && phi <= 94) ||
+        (phiFilter === "gte95" && phi !== null && phi >= 95);
+
+      const matchesDate = rowMatchesDate(row, dateFilter);
+
+      return matchesPhi && matchesDate;
+    });
+  }, [sortedRows, phiFilter, dateFilter]);
+
+  const totalRows = filteredTableRows.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / rowsPerPage));
 
   const paginatedRows = useMemo(() => {
     const start = (currentPage - 1) * rowsPerPage;
     const end = start + rowsPerPage;
-    return sortedRows.slice(start, end);
-  }, [sortedRows, currentPage, rowsPerPage]);
+    return filteredTableRows.slice(start, end);
+  }, [filteredTableRows, currentPage, rowsPerPage]);
+
   const pageNumbers = getPageNumbers(currentPage, totalPages);
 
   const startRow = totalRows === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1;
@@ -630,6 +691,10 @@ export default function Home() {
   useEffect(() => {
     setCurrentPage(1);
   }, [mergedRows.length]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [phiFilter, dateFilter]);
 
   const tableHeaders = useMemo(() => {
     if (mergedRows.length === 0) return [];
@@ -1103,6 +1168,45 @@ export default function Home() {
         </div>
 
         <div className="bg-white rounded-xl shadow p-4 sm:p-5 md:p-6 mb-4 md:mb-6">
+          <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <select
+                value={phiFilter}
+                onChange={(e) =>
+                  setPhiFilter(e.target.value as "all" | "lt80" | "80to94" | "gte95")
+                }
+                className="rounded-md border px-3 py-2 text-sm"
+              >
+                <option value="all">All PHI</option>
+                <option value="lt80">PHI &lt; 80</option>
+                <option value="80to94">PHI 80–94</option>
+                <option value="gte95">PHI ≥ 95</option>
+              </select>
+
+              <input
+                type="date"
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="rounded-md border px-3 py-2 text-sm"
+              />
+
+              <button
+                type="button"
+                onClick={() => {
+                  setPhiFilter("all");
+                  setDateFilter("");
+                }}
+                className="rounded-md bg-gray-100 px-4 py-2 text-sm hover:bg-gray-200"
+              >
+                Clear Filters
+              </button>
+            </div>
+
+            <div className="text-sm text-gray-500">
+              Filtered results: {filteredTableRows.length}
+            </div>
+        </div>
+        
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
               <span>

@@ -5,6 +5,8 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabaseBrowser";
 
+import { useState } from "react";
+
 const navItems = [
   { href: "/", label: "Dashboard" },
   { href: "/reports", label: "Reports" },
@@ -20,12 +22,18 @@ export default function AppShell({
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createSupabaseBrowserClient();
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   async function signOut() {
+  try {
+    setIsSigningOut(true);
     await supabase.auth.signOut();
-    router.replace("/login");
-    router.refresh();
+    window.location.href = "/login";
+  } catch (e) {
+    console.error("Sign out failed:", e);
+    setIsSigningOut(false);
   }
+}
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "#f8fafc" }}>
@@ -91,12 +99,14 @@ export default function AppShell({
             border: "none",
             background: "#1e293b",
             color: "white",
-            cursor: "pointer",
+            cursor: isSigningOut ? "default" : "pointer",
             textAlign: "left",
+           opacity: isSigningOut ? 0.7 : 1,
           }}
           type="button"
+          disabled={isSigningOut}
         >
-          Sign Out
+          {isSigningOut ? "Signing out..." : "Sign Out"}
         </button>
 
         <div style={{ flexGrow: 1 }} />
