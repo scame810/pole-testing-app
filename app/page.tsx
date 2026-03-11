@@ -296,6 +296,43 @@ export default function Home() {
     }, 500);
   }
 
+  async function goToPoleInTable(poleId: string) {
+    if (!activeOrgId || !poleId) return;
+
+    try {
+      const sortKey = getServerSortColumn(sortColumn);
+      const ascending = sortDirection === "asc";
+
+      let query = supabase
+        .from("poles")
+        .select("pole_id", { count: "exact" })
+        .eq("org_id", activeOrgId);
+
+      if (phiFilter === "lt80") query = query.lt("phi", 80);
+      if (phiFilter === "80to94") query = query.gte("phi", 80).lte("phi", 94);
+      if (phiFilter === "gte95") query = query.gte("phi", 95);
+
+      if (dateFrom) query = query.gte("date_tested", dateFrom);
+      if (dateTo) query = query.lte("date_tested", dateTo);
+
+      const { data, error } = await query.order(sortKey, { ascending });
+
+      if (error) throw error;
+
+      const index = (data ?? []).findIndex((r: any) => r.pole_id === poleId);
+      if (index === -1) return;
+
+      if (rowsPerPage === "all") return;
+
+      const page = Math.floor(index / rowsPerPage) + 1;
+      if (page !== currentPage) {
+        setCurrentPage(page);
+      }
+    } catch (e) {
+      console.error("goToPoleInTable failed:", e);
+    }
+  }
+
   async function mergeOhmsToSupabase(rows: Row[]) {
     const ohmsAliases: Record<string, string[]> = {
       "OHMS": ["OHMS"],
@@ -788,7 +825,7 @@ export default function Home() {
         block: "center",
       });
     }
-  }, [selectedPoleId]);
+  }, [selectedPoleId, paginatedRows]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -887,11 +924,17 @@ export default function Home() {
     Papa.parse<Row>(file, {
       header: true,
       skipEmptyLines: true,
-      transformHeader: (h) => h.trim(),
+      transformHeader: (h) => {
+        const cleaned = h.trim();
+        if (!cleaned) return "_empty";
+        return cleaned.replace(/\s+/g, " ");
+      },
       complete: async (results) => {
         const rows = (results.data || [])
           .map((r) => stripProtectedColumns(r))
-          .filter((r) => Object.keys(r || {}).length > 0);
+          .filter((r) =>
+            Object.values(r || {}).some((v) => String(v ?? "").trim() !== "")
+          );
 
         const errors = validateMainRows(rows);
         if (errors.length) {
@@ -945,11 +988,17 @@ export default function Home() {
     Papa.parse<Row>(file, {
       header: true,
       skipEmptyLines: true,
-      transformHeader: (h) => h.trim(),
+      transformHeader: (h) => {
+        const cleaned = h.trim();
+        if (!cleaned) return "_empty";
+        return cleaned.replace(/\s+/g, " ");
+      },
       complete: async (results) => {
         const rows = (results.data || [])
           .map((r) => stripProtectedColumns(r))
-          .filter((r) => Object.keys(r || {}).length > 0);
+          .filter((r) =>
+            Object.values(r || {}).some((v) => String(v ?? "").trim() !== "")
+          );
 
         (async () => {
           try {
@@ -1270,7 +1319,10 @@ export default function Home() {
               <PoleMap
                 points={filteredPoints}
                 selected={selectedPoint}
-                onSelect={(id: string) => setSelectedPoleId(id)}
+                onSelect={async (id: string) => {
+                  setSelectedPoleId(id);
+                  await goToPoleInTable(id);
+                }}
                 zoomToAllTrigger={zoomToAllTrigger}
                 fieldOrder={tableHeaders}
               />
@@ -1487,7 +1539,7 @@ export default function Home() {
                       className={
                         "cursor-pointer transition-colors " +
                         (poleId === selectedPoleId
-                          ? "bg-yellow-100"
+                          ? "bg-yellow-100 ring-2 ring-inset ring-yellow-400"
                           : idx % 2 === 0
                           ? "bg-white"
                           : "bg-gray-50")
