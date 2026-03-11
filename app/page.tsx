@@ -1175,6 +1175,7 @@ export default function Home() {
                 selected={selectedPoint}
                 onSelect={(id: string) => setSelectedPoleId(id)}
                 zoomToAllTrigger={zoomToAllTrigger}
+                fieldOrder={tableHeaders}
               />
             </div>
           )}

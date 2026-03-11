@@ -75,10 +75,18 @@ function makeColorIcon(color: string) {
   });
 }
 
-function buildPopupHtml(pole: Record<string, any>) {
+function buildPopupHtml(pole: Record<string, any>, fieldOrder: string[] = []) {
   const id = pole["Pole ID"] ?? pole["PoleID"] ?? pole["id"] ?? "";
 
-  const rows = Object.keys(pole)
+  const preferredKeys = fieldOrder.length
+    ? fieldOrder
+    : Object.keys(pole);
+
+  const remainingKeys = Object.keys(pole).filter((k) => !preferredKeys.includes(k));
+
+  const orderedKeys = [...preferredKeys, ...remainingKeys];
+
+  const rows = orderedKeys
     .map((k) => {
       const v = pole[k];
       if (v === null || v === undefined || String(v).trim() === "") return "";
@@ -190,11 +198,13 @@ function ClusterLayer({
   onSelect,
   markerRefs,
   clusterGroupRef,
+  fieldOrder,
 }: {
   points: PolePoint[];
   onSelect: (id: string) => void;
   markerRefs: React.MutableRefObject<Map<string, L.Marker>>;
   clusterGroupRef: React.MutableRefObject<any | null>;
+  fieldOrder: string[];
 }) {
   const map = useMap();
 
@@ -219,7 +229,8 @@ function ClusterLayer({
       marker.on("click", () => onSelectRef.current(p.id));
 
       const html = buildPopupHtml(
-        p.data ?? { id: p.id, label: p.label, lat: p.lat, lng: p.lng }
+        p.data ?? { id: p.id, label: p.label, lat: p.lat, lng: p.lng },
+        fieldOrder
       );
       marker.bindPopup(html, { maxWidth: 360, autoPan: false });
 
@@ -248,11 +259,13 @@ export default function PoleMap({
   selected,
   onSelect,
   zoomToAllTrigger = 0,
+  fieldOrder = [],
 }: {
   points: PolePoint[];
   selected?: PolePoint | null;
   onSelect: (id: string) => void;
   zoomToAllTrigger?: number;
+  fieldOrder?: string[];
 }) {
   const markerRefs = useRef<Map<string, L.Marker>>(new Map());
   const clusterGroupRef = useRef<any | null>(null);
@@ -291,6 +304,7 @@ export default function PoleMap({
           onSelect={onSelect}
           markerRefs={markerRefs}
           clusterGroupRef={clusterGroupRef}
+          fieldOrder={fieldOrder}
         />
 
         <SelectedController
