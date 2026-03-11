@@ -83,6 +83,31 @@ function stripProtectedColumns(row: Row): Row {
   return copy;
 }
 
+function getDateTestedValue(row: Row): string | null {
+  const raw =
+    row["Date Tested"] ??
+    row["date tested"] ??
+    row["Date"] ??
+    null;
+
+  if (raw === null || raw === undefined) return null;
+
+  const value = String(raw).trim();
+  if (!value) return null;
+
+  const leadingDateMatch = value.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (leadingDateMatch) return leadingDateMatch[1];
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+
+  const yyyy = parsed.getFullYear();
+  const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+  const dd = String(parsed.getDate()).padStart(2, "0");
+
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function getPhiValue(row: Row): number | null {
   const raw =
     row["Pole Health Index(PHI)"] ??
@@ -96,51 +121,51 @@ function getPhiValue(row: Row): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function extractRowDate(row: Row): string | null {
-  const raw =
-    row["Date Tested"] ??
-    row["date tested"] ??
-    row["Date"] ??
-    null;
+function getServerSortColumn(sortColumn: string | null): string {
+  if (!sortColumn) return "pole_id";
 
-  if (raw === null || raw === undefined) return null;
-
-  const value = String(raw).trim();
-  if (!value) return null;
-
-  // Handles formats like: "2025-09-13 / PM 12:53"
-  const leadingDateMatch = value.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (leadingDateMatch) {
-    return leadingDateMatch[1];
+  switch (sortColumn) {
+    case "Pole ID":
+      return "pole_id";
+    case "Latitude":
+      return "latitude";
+    case "Longitude":
+      return "longitude";
+    case "Pole Health Index(PHI)":
+      return "phi";
+    case "Date Tested":
+      return "date_tested";
+    default:
+      return "pole_id";
   }
-
-  // Fallback for parseable formats
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-
-  const yyyy = parsed.getFullYear();
-  const mm = String(parsed.getMonth() + 1).padStart(2, "0");
-  const dd = String(parsed.getDate()).padStart(2, "0");
-
-  return `${yyyy}-${mm}-${dd}`;
 }
 
-function rowMatchesDateRange(row: Row, fromDate: string, toDate: string): boolean {
-  const rowDate = extractRowDate(row);
-  if (!rowDate) return false;
-
-  if (fromDate && rowDate < fromDate) return false;
-  if (toDate && rowDate > toDate) return false;
-
-  return true;
+function buildMapPopupData(row: Row): Row {
+  return {
+    "Pole ID": row["Pole ID"] ?? "",
+    Latitude: row["Latitude"] ?? "",
+    Longitude: row["Longitude"] ?? "",
+    "Date Tested": row["Date Tested"] ?? "",
+    "Test Observations": row["Test Observations"] ?? "",
+    "Pole Health Index(PHI)": row["Pole Health Index(PHI)"] ?? "",
+    "Foundation Health Index(FHI)": row["Foundation Health Index(FHI)"] ?? "",
+    "RSV (%)": row["RSV (%)"] ?? "",
+    "Pole Length (ft)": row["Pole Length (ft)"] ?? "",
+    "Measured Diameter (inches)": row["Measured Diameter (inches)"] ?? "",
+    Images: row["Images"] ?? "",
+    OHMS: row["OHMS"] ?? "",
+    "Ground Rods": row["Ground Rods"] ?? "",
+    "OHMS Rod 1": row["OHMS Rod 1"] ?? "",
+    "GW Repair": row["GW Repair"] ?? "",
+    "Guy Markers": row["Guy Markers"] ?? "",
+    Comments: row["Comments"] ?? "",
+  };
 }
 
 export default function Home() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const router = useRouter();
 
-  const [mainRows, setMainRows] = useState<Row[]>([]);
-  const [ohmsMap, setOhmsMap] = useState<Record<string, Row>>({});
   const [status, setStatus] = useState<string>("");
   const [selectedPoleId, setSelectedPoleId] = useState<string | null>(null);
   const tableContainerRef = useRef<HTMLDivElement | null>(null);
@@ -151,14 +176,21 @@ export default function Home() {
   const [rowsPerPage, setRowsPerPage] = useState<number | "all">(10);
   const [supabaseStatus, setSupabaseStatus] = useState("not run");
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
-  const [dataByPoleId, setDataByPoleId] = useState<Record<string, any>>({});
   const [selectedPoleIds, setSelectedPoleIds] = useState<Record<string, boolean>>({});
   const [ownerOrgs, setOwnerOrgs] = useState<{ org_id: string; name?: string }[]>([]);
   const [activeRole, setActiveRole] = useState<"owner" | "member" | "viewer" | null>(null);
+  const [activeOrgName, setActiveOrgName] = useState<string>("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteStatus, setInviteStatus] = useState("");
   const [phiFilter, setPhiFilter] = useState<"all" | "lt80" | "80to94" | "gte95">("all");
   const [dateFrom, setDateFrom] = useState("");
+  const [tableRows, setTableRows] = useState<Row[]>([]);
+  const [tableTotalRows, setTableTotalRows] = useState(0);
+  const [tableLoading, setTableLoading] = useState(false);
+  const [importSummary, setImportSummary] = useState("");
+  const [lastRefresh, setLastRefresh] = useState<string>("");
+  const [mapRows, setMapRows] = useState<Row[]>([]);
+  const [mapLoading, setMapLoading] = useState(false);
   const [dateTo, setDateTo] = useState("");
   const saveTimersRef = useRef<Record<string, any>>({});
 
@@ -374,12 +406,9 @@ export default function Home() {
       return;
     }
 
-    const nextDataByPole: Record<string, any> = {};
     const nextComments: Record<string, string> = {};
 
     const rows: Row[] = (data ?? []).map((r: any) => {
-      nextDataByPole[r.pole_id] = r.data ?? {};
-
       if (r.comments !== undefined && r.comments !== null && String(r.comments).trim() !== "") {
         nextComments[r.pole_id] = String(r.comments);
       }
@@ -393,10 +422,106 @@ export default function Home() {
       };
     });
 
-    setDataByPoleId(nextDataByPole);
     setCommentsByPole(nextComments);
-    setMainRows(rows);
     setSupabaseStatus(`ok (loaded: ${rows.length})`);
+  }
+
+  async function loadTablePage(orgId: string) {
+    if (!orgId) return;
+
+    setTableLoading(true);
+
+    try {
+      const pageSize = rowsPerPage === "all" ? 5000 : rowsPerPage;
+      const from = rowsPerPage === "all" ? 0 : (currentPage - 1) * rowsPerPage;
+      const to = rowsPerPage === "all" ? pageSize - 1 : from + rowsPerPage - 1;
+
+      let query = supabase
+        .from("poles")
+        .select("pole_id, latitude, longitude, phi, date_tested, data, comments", {
+          count: "exact",
+        })  
+        .eq("org_id", orgId);
+
+      if (phiFilter === "lt80") query = query.lt("phi", 80);
+      if (phiFilter === "80to94") query = query.gte("phi", 80).lte("phi", 94);
+      if (phiFilter === "gte95") query = query.gte("phi", 95);
+
+      if (dateFrom) query = query.gte("date_tested", dateFrom);
+      if (dateTo) query = query.lte("date_tested", dateTo);
+
+      const sortKey = getServerSortColumn(sortColumn);
+      query = query.order(sortKey, { ascending: sortDirection === "asc" });
+
+      query = query.range(from, to);
+
+      const { data, error, count } = await query;
+
+      if (error) throw error;
+
+      const nextComments: Record<string, string> = {};
+      const rows: Row[] = (data ?? []).map((r: any) => {
+        if (r.comments !== undefined && r.comments !== null && String(r.comments).trim() !== "") {
+          nextComments[r.pole_id] = String(r.comments);
+        }
+
+        return {
+          "Pole ID": r.pole_id,
+          Latitude: r.latitude,
+          Longitude: r.longitude,
+          ...(r.data ?? {}),
+          Comments: r.comments ?? "",
+        };
+      });
+
+      setCommentsByPole((prev) => ({ ...prev, ...nextComments }));
+      setTableRows(rows);
+      setTableTotalRows(count ?? rows.length);
+        } catch (e) {
+          console.error("loadTablePage failed:", e);
+        } finally {
+          setTableLoading(false);
+          setLastRefresh(new Date().toLocaleTimeString());
+        }
+      }
+
+  async function loadMapRows(orgId: string) {
+    if (!orgId) return;
+
+    setMapLoading(true);
+
+    try {
+      let query = supabase
+        .from("poles")
+        .select("pole_id, latitude, longitude, phi, date_tested, data, comments")
+        .eq("org_id", orgId)
+        .limit(10000);
+
+      if (phiFilter === "lt80") query = query.lt("phi", 80);
+      if (phiFilter === "80to94") query = query.gte("phi", 80).lte("phi", 94);
+      if (phiFilter === "gte95") query = query.gte("phi", 95);
+
+      if (dateFrom) query = query.gte("date_tested", dateFrom);
+      if (dateTo) query = query.lte("date_tested", dateTo);
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      const rows: Row[] = (data ?? []).map((r: any) => ({
+        "Pole ID": r.pole_id,
+        Latitude: r.latitude,
+        Longitude: r.longitude,
+        ...(r.data ?? {}),
+        Comments: r.comments ?? "",
+      }));
+
+      setMapRows(rows);
+    } catch (e) {
+      console.error("loadMapRows failed:", e);
+    } finally {
+      setMapLoading(false);
+    }
   }
 
   async function loadOwnerOrgs() {
@@ -454,6 +579,8 @@ export default function Home() {
 
         const owners = await loadOwnerOrgs();
         setOwnerOrgs(owners);
+        const active = owners.find(o => o.org_id === orgId);
+        if (active) setActiveOrgName(active.name ?? active.org_id);
 
         await loadActiveRole(orgId);
         await loadPolesFromSupabase(orgId);
@@ -484,8 +611,18 @@ export default function Home() {
 
       const latitude = getNumber(latKey ? r[latKey] : null);
       const longitude = getNumber(lngKey ? r[lngKey] : null);
+      const phi = getPhiValue(r);
+      const date_tested = getDateTestedValue(r);
 
-      byId.set(pole_id, { pole_id, org_id: activeOrgId, latitude, longitude, data: r });
+      byId.set(pole_id, {
+        pole_id,
+        org_id: activeOrgId,
+        latitude,
+        longitude,
+        phi,
+        date_tested,
+        data: r,
+      });
     }
 
     const payload = Array.from(byId.values());
@@ -504,9 +641,9 @@ export default function Home() {
   }
 
   const exportCombinedCsv = () => {
-    if (mergedRows.length === 0) return;
+    if (tableRows.length === 0) return;
 
-    const rowsWithComments = mergedRows.map((row) => {
+    const rowsWithComments = tableRows.map((row) => {
       const id = getPoleId(row) ?? "";
       return {
         ...row,
@@ -535,7 +672,7 @@ export default function Home() {
   };
 
   const exportSelectedCsv = () => {
-    const selectedRows = mergedRows.filter((row) => {
+    const selectedRows = tableRows.filter((row) => {
       const id = getPoleId(row) ?? "";
       return !!selectedPoleIds[id];
     });
@@ -570,72 +707,13 @@ export default function Home() {
     URL.revokeObjectURL(url);
   };
 
-  const mergedRows = useMemo(() => {
-    if (mainRows.length === 0) return [];
-    return mainRows.map((r) => {
-      const id = getPoleId(r);
-      const extra = id ? ohmsMap[id] : undefined;
-      return { ...r, ...(extra || {}) };
-    });
-  }, [mainRows, ohmsMap]);
-
-  const sortedRows = useMemo(() => {
-    if (!sortColumn) return mergedRows;
-
-    const rows = [...mergedRows];
-
-    rows.sort((a, b) => {
-      const aVal = a?.[sortColumn];
-      const bVal = b?.[sortColumn];
-
-      const numA = Number(aVal);
-      const numB = Number(bVal);
-
-      if (!isNaN(numA) && !isNaN(numB)) {
-        return sortDirection === "asc" ? numA - numB : numB - numA;
-      }
-
-      const strA = String(aVal ?? "").toLowerCase();
-      const strB = String(bVal ?? "").toLowerCase();
-
-      if (strA < strB) return sortDirection === "asc" ? -1 : 1;
-      if (strA > strB) return sortDirection === "asc" ? 1 : -1;
-
-      return 0;
-    });
-
-    return rows;
-  }, [mergedRows, sortColumn, sortDirection]);
-
   const selectedCount = Object.values(selectedPoleIds).filter(Boolean).length;
 
-  const filteredTableRows = useMemo(() => {
-    return sortedRows.filter((row) => {
-      const phi = getPhiValue(row);
-
-      const matchesPhi =
-        phiFilter === "all" ||
-        (phiFilter === "lt80" && phi !== null && phi < 80) ||
-        (phiFilter === "80to94" && phi !== null && phi >= 80 && phi <= 94) ||
-        (phiFilter === "gte95" && phi !== null && phi >= 95);
-
-      const matchesDate = rowMatchesDateRange(row, dateFrom, dateTo);
-
-      return matchesPhi && matchesDate;
-    });
-  }, [sortedRows, phiFilter, dateFrom, dateTo]);
-
-  const totalRows = filteredTableRows.length;
+  const totalRows = tableTotalRows;
   const totalPages =
     rowsPerPage === "all" ? 1 : Math.max(1, Math.ceil(totalRows / rowsPerPage));
 
-  const paginatedRows = useMemo(() => {
-    if (rowsPerPage === "all") return filteredTableRows;
-
-    const start = (currentPage - 1) * rowsPerPage;
-    const end = start + rowsPerPage;
-    return filteredTableRows.slice(start, end);
-  }, [filteredTableRows, currentPage, rowsPerPage]);
+  const paginatedRows = tableRows;
 
   const startRow =
     totalRows === 0 ? 0 : rowsPerPage === "all" ? 1 : (currentPage - 1) * rowsPerPage + 1;
@@ -646,29 +724,29 @@ export default function Home() {
   const pageNumbers = getPageNumbers(currentPage, totalPages);
 
   const points = useMemo<PolePoint[]>(() => {
-  return mergedRows
-    .map((r) => {
-      const id = getPoleId(r);
-      if (!id) return null;
+    return mapRows
+      .map((r) => {
+        const id = getPoleId(r);
+        if (!id) return null;
 
-      const latKey = LAT_KEYS.find((k) => r?.[k] !== undefined);
-      const lngKey = LNG_KEYS.find((k) => r?.[k] !== undefined);
+        const latKey = LAT_KEYS.find((k) => r?.[k] !== undefined);
+        const lngKey = LNG_KEYS.find((k) => r?.[k] !== undefined);
 
-      const lat = getNumber(latKey ? r[latKey] : null);
-      const lng = getNumber(lngKey ? r[lngKey] : null);
+        const lat = getNumber(latKey ? r[latKey] : null);
+        const lng = getNumber(lngKey ? r[lngKey] : null);
 
-      if (lat === null || lng === null) return null;
+        if (lat === null || lng === null) return null;
 
-      return {
-        id,
-        lat,
-        lng,
-        label: String(r["Pole ID"] ?? id),
-        data: r,
-      };
-    })
-    .filter(Boolean) as PolePoint[];
-}, [mergedRows]);
+        return {
+          id,
+          lat,
+          lng,
+          label: String(r["Pole ID"] ?? id),
+          data: buildMapPopupData(r),  
+        };
+      })
+      .filter(Boolean) as PolePoint[];
+  }, [mapRows]);
 
   const filteredPoints = useMemo(() => {
     const q = poleSearch.trim().toLowerCase();
@@ -707,14 +785,29 @@ export default function Home() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [mergedRows.length]);
-
-  useEffect(() => {
-    setCurrentPage(1);
   }, [phiFilter, dateFrom, dateTo]);
 
+  useEffect(() => {
+    if (!activeOrgId) return;
+    loadTablePage(activeOrgId);
+  }, [
+    activeOrgId,
+    currentPage,
+    rowsPerPage,
+    sortColumn,
+    sortDirection,
+    phiFilter,
+    dateFrom,
+    dateTo,
+  ]);
+
+  useEffect(() => {
+    if (!activeOrgId) return;
+    loadMapRows(activeOrgId);
+  }, [activeOrgId, phiFilter, dateFrom, dateTo]);
+
   const tableHeaders = useMemo(() => {
-    if (mergedRows.length === 0) return [];
+    if (tableRows.length === 0) return [];
 
     const preferred = [
       "Pole ID",
@@ -737,7 +830,7 @@ export default function Home() {
     ];
 
     const all = new Set<string>();
-    for (const r of mergedRows) Object.keys(r || {}).forEach((k) => all.add(k));
+    for (const r of tableRows) Object.keys(r || {}).forEach((k) => all.add(k));
 
     POLE_ID_KEYS.filter((k) => k !== "Pole ID").forEach((k) => all.delete(k));
 
@@ -760,7 +853,7 @@ export default function Home() {
     if (!out.includes("Comments")) out.push("Comments");
 
     return out;
-  }, [mergedRows]);
+  }, [tableRows]);
 
   const handleMainCSVUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -804,8 +897,11 @@ export default function Home() {
           setStatus(`Saved ${res.count} poles to Supabase. Reloading...`);
           if (!activeOrgId) throw new Error("No activeOrgId selected");
           await loadPolesFromSupabase(activeOrgId);
+          await loadTablePage(activeOrgId);
+          await loadMapRows(activeOrgId);
 
           setStatus(`Done. Saved ${res.count} poles.`);
+          setImportSummary(`Imported ${res.count} poles`);
           setSelectedPoleId(null);
           event.target.value = "";
         } catch (e: any) {
@@ -851,7 +947,10 @@ export default function Home() {
             setStatus(`Saved OHMS for ${res.count} poles. Reloading...`);
             if (!activeOrgId) throw new Error("No activeOrgId selected");
             await loadPolesFromSupabase(activeOrgId);
+            await loadTablePage(activeOrgId);
+            await loadMapRows(activeOrgId);
             setStatus(`Done. Updated OHMS for ${res.count} poles.`);
+            setImportSummary(`Updated OHMS for ${res.count} poles`);
             event.target.value = "";
           } catch (e: any) {
             console.error("OHMS save error full:", e);
@@ -862,35 +961,6 @@ export default function Home() {
           }
         })();
 
-        const map: Record<string, Row> = {};
-        let matched = 0;
-        let missingId = 0;
-
-        for (const r of rows) {
-          const id = getPoleId(r);
-          if (!id) {
-            missingId++;
-            continue;
-          }
-          map[id] = r;
-        }
-
-        if (mainRows.length > 0) {
-          for (const mr of mainRows) {
-            const id = getPoleId(mr);
-            if (id && map[id]) matched++;
-          }
-        }
-
-        setOhmsMap(map);
-
-        const msg =
-          mainRows.length > 0
-            ? `OHMS CSV loaded: ${rows.length} rows (${matched} matched to Main by Pole ID)`
-            : `OHMS CSV loaded: ${rows.length} rows (upload Main CSV to see matches)`;
-
-        setStatus(missingId > 0 ? `${msg} — ${missingId} rows missing Pole ID` : msg);
-        event.target.value = "";
       },
       error: (err) => {
         console.error(err);
@@ -902,14 +972,14 @@ export default function Home() {
   };
 
   const clearAll = () => {
-    setMainRows([]);
-    setOhmsMap({});
     setSelectedPoleId(null);
     setStatus("");
     setCommentsByPole({});
     setCommentSaveStatus({});
+    setTableRows([]);
+    setTableTotalRows(0);
+    setMapRows([]);
   };
-
   const allCurrentPageSelected =
   paginatedRows.length > 0 &&
   paginatedRows.every((row) => {
@@ -932,9 +1002,18 @@ export default function Home() {
             )}
           </div>
 
+          {isOwner && activeOrgName && (
+            <div className="mb-4 rounded-lg border border-[#094929] bg-[#e6f4ec] px-4 py-2 text-sm font-semibold text-[#094929]">
+              Active Organization: {activeOrgName}
+            </div>
+          )}
+
           {isOwner && (
             <div className="text-sm text-gray-500">
               Supabase status: <b>{supabaseStatus}</b>
+              {importSummary && (
+                <span className="ml-4 text-gray-600">| {importSummary}</span>
+              )}
             </div>
           )}
         </div>
@@ -959,7 +1038,7 @@ export default function Home() {
             className="bg-[#094929] text-white px-4 py-2 rounded-lg hover:bg-[#0c5a33] disabled:opacity-50"
             onClick={exportCombinedCsv}
             type="button"
-            disabled={mergedRows.length === 0}
+            disabled={tableRows.length === 0}
           >
             Export CSV
           </button>
@@ -993,6 +1072,9 @@ export default function Home() {
                     const nextOrg = e.target.value;
                     setActiveOrgId(nextOrg);
 
+                    const selected = ownerOrgs.find(o => o.org_id === nextOrg);
+                    if (selected) setActiveOrgName(selected.name ?? selected.org_id);
+                    
                     const {
                       data: { session },
                     } = await supabase.auth.getSession();
@@ -1038,6 +1120,8 @@ export default function Home() {
               onClick={async () => {
                 if (!activeOrgId) return;
                 await loadPolesFromSupabase(activeOrgId);
+                await loadTablePage(activeOrgId);
+                await loadMapRows(activeOrgId);
               }}
               type="button"
             >
@@ -1164,7 +1248,9 @@ export default function Home() {
             )}
           </div>
 
-          {filteredPoints.length === 0 ? (
+          {mapLoading ? (
+            <p className="text-sm text-gray-600">Loading map...</p>
+          ) : filteredPoints.length === 0 ? (
             <p className="text-sm text-gray-600">
               No map points match your search, or your CSV is missing valid Latitude and Longitude columns.
             </p>
@@ -1237,7 +1323,7 @@ export default function Home() {
             </div>
 
             <div className="text-sm text-gray-500">
-              Filtered results: {filteredTableRows.length}
+              Filtered results: {tableTotalRows}
             </div>
         </div>
 
@@ -1315,8 +1401,22 @@ export default function Home() {
             className="overflow-x-auto max-h-[500px] overflow-y-auto"
           >
 
-          {mergedRows.length === 0 ? (
-            <p className="text-center p-4 text-gray-500">No data uploaded yet.</p>
+          {tableLoading && (
+            <div className="p-3 text-sm text-gray-600">
+              Loading table...
+            </div>
+          )}
+
+          {lastRefresh && (
+            <div className="text-xs text-gray-500 mt-2">
+              Last refreshed: {lastRefresh}
+            </div>
+          )}
+
+          {tableRows.length === 0 && !tableLoading ? (
+            <p className="text-center p-4 text-gray-500">
+              No poles match the selected filters.
+            </p>
           ) : (
             <table className="min-w-full border border-gray-300 text-sm">
 
