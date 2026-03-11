@@ -143,8 +143,8 @@ function getServerSortColumn(sortColumn: string | null): string {
 function buildMapPopupData(row: Row): Row {
   return {
     "Pole ID": row["Pole ID"] ?? "",
-    Latitude: row["Latitude"] ?? "",
-    Longitude: row["Longitude"] ?? "",
+    "Latitude": row["Latitude"] ?? "",
+    "Longitude": row["Longitude"] ?? "",
     "Date Tested": row["Date Tested"] ?? "",
     "Test Observations": row["Test Observations"] ?? "",
     "Pole Health Index(PHI)": row["Pole Health Index(PHI)"] ?? "",
@@ -152,13 +152,13 @@ function buildMapPopupData(row: Row): Row {
     "RSV (%)": row["RSV (%)"] ?? "",
     "Pole Length (ft)": row["Pole Length (ft)"] ?? "",
     "Measured Diameter (inches)": row["Measured Diameter (inches)"] ?? "",
-    Images: row["Images"] ?? "",
-    OHMS: row["OHMS"] ?? "",
+    "Images": row["Images"] ?? "",
+    "OHMS": row["OHMS"] ?? "",
     "Ground Rods": row["Ground Rods"] ?? "",
     "OHMS Rod 1": row["OHMS Rod 1"] ?? "",
     "GW Repair": row["GW Repair"] ?? "",
     "Guy Markers": row["Guy Markers"] ?? "",
-    Comments: row["Comments"] ?? "",
+    "Comments": row["Comments"] ?? "",
   };
 }
 
@@ -297,7 +297,13 @@ export default function Home() {
   }
 
   async function mergeOhmsToSupabase(rows: Row[]) {
-    const ohmsCols = ["OHMS", "Ground Rods", "OHMS Rod 1", "GW Repair", "Guy Markers"];
+    const ohmsAliases: Record<string, string[]> = {
+      "OHMS": ["OHMS"],
+      "Ground Rods": ["Ground Rods", "GroundRods"],
+      "OHMS Rod 1": ["OHMS Rod 1", "OHMS Rod1", "OHMS ROD 1", "OHMS rod 1"],
+      "GW Repair": ["GW Repair", "GWRepair"],
+      "Guy Markers": ["Guy Markers", "GuyMarkers"],
+    };
     const byId = new Map<string, Record<string, any>>();
 
     for (const r of rows) {
@@ -306,9 +312,14 @@ export default function Home() {
 
       const patch: Record<string, any> = {};
 
-      for (const c of ohmsCols) {
-        const v = r?.[c];
-        if (v !== undefined && v !== null && String(v).trim() !== "") patch[c] = v;
+      for (const [canonical, aliases] of Object.entries(ohmsAliases)) {
+        const foundKey = aliases.find((key) => r?.[key] !== undefined);
+        if (!foundKey) continue;
+
+        const v = r[foundKey];
+        if (v !== undefined && v !== null && String(v).trim() !== "") {
+          patch[canonical] = v;
+        }
       }
 
       for (const [k, v] of Object.entries(r)) {
@@ -838,7 +849,7 @@ export default function Home() {
     const used = new Set<string>();
 
     for (const h of preferred) {
-      if (all.has(h) && !used.has(h)) {
+      if (!used.has(h)) {
         used.add(h);
         out.push(h);
       }

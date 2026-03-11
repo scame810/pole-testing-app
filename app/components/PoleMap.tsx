@@ -78,12 +78,28 @@ function makeColorIcon(color: string) {
 function buildPopupHtml(pole: Record<string, any>, fieldOrder: string[] = []) {
   const id = pole["Pole ID"] ?? pole["PoleID"] ?? pole["id"] ?? "";
 
-  const preferredKeys = fieldOrder.length
-    ? fieldOrder
-    : Object.keys(pole);
+  const fallbackOrder = [
+    "Pole ID",
+    "Latitude",
+    "Longitude",
+    "Date Tested",
+    "Test Observations",
+    "Pole Health Index(PHI)",
+    "Foundation Health Index(FHI)",
+    "RSV (%)",
+    "Pole Length (ft)",
+    "Measured Diameter (inches)",
+    "Images",
+    "OHMS",
+    "Ground Rods",
+    "OHMS Rod 1",
+    "GW Repair",
+    "Guy Markers",
+    "Comments",
+  ];
 
+  const preferredKeys = fieldOrder.length ? fieldOrder : fallbackOrder;
   const remainingKeys = Object.keys(pole).filter((k) => !preferredKeys.includes(k));
-
   const orderedKeys = [...preferredKeys, ...remainingKeys];
 
   const rows = orderedKeys
