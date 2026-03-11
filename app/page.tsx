@@ -96,33 +96,43 @@ function getPhiValue(row: Row): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function rowMatchesDate(row: Row, selectedDate: string): boolean {
-  if (!selectedDate) return true;
-
+function extractRowDate(row: Row): string | null {
   const raw =
     row["Date Tested"] ??
     row["date tested"] ??
     row["Date"] ??
     null;
 
-  if (raw === null || raw === undefined) return false;
+  if (raw === null || raw === undefined) return null;
 
   const value = String(raw).trim();
-  if (!value) return false;
+  if (!value) return null;
 
-  // Match exact YYYY-MM-DD if already formatted that way
-  if (value === selectedDate) return true;
+  // Handles formats like: "2025-09-13 / PM 12:53"
+  const leadingDateMatch = value.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (leadingDateMatch) {
+    return leadingDateMatch[1];
+  }
 
-  // Try parsing common CSV date values
+  // Fallback for parseable formats
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return false;
+  if (Number.isNaN(parsed.getTime())) return null;
 
   const yyyy = parsed.getFullYear();
   const mm = String(parsed.getMonth() + 1).padStart(2, "0");
   const dd = String(parsed.getDate()).padStart(2, "0");
-  const normalized = `${yyyy}-${mm}-${dd}`;
 
-  return normalized === selectedDate;
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function rowMatchesDateRange(row: Row, fromDate: string, toDate: string): boolean {
+  const rowDate = extractRowDate(row);
+  if (!rowDate) return false;
+
+  if (fromDate && rowDate < fromDate) return false;
+  if (toDate && rowDate > toDate) return false;
+
+  return true;
 }
 
 export default function Home() {
@@ -148,7 +158,8 @@ export default function Home() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteStatus, setInviteStatus] = useState("");
   const [phiFilter, setPhiFilter] = useState<"all" | "lt80" | "80to94" | "gte95">("all");
-  const [dateFilter, setDateFilter] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const saveTimersRef = useRef<Record<string, any>>({});
 
   const isOwner = activeRole === "owner";
@@ -608,11 +619,11 @@ export default function Home() {
         (phiFilter === "80to94" && phi !== null && phi >= 80 && phi <= 94) ||
         (phiFilter === "gte95" && phi !== null && phi >= 95);
 
-      const matchesDate = rowMatchesDate(row, dateFilter);
+      const matchesDate = rowMatchesDateRange(row, dateFrom, dateTo);
 
       return matchesPhi && matchesDate;
     });
-  }, [sortedRows, phiFilter, dateFilter]);
+  }, [sortedRows, phiFilter, dateFrom, dateTo]);
 
   const totalRows = filteredTableRows.length;
   const totalPages =
@@ -700,7 +711,7 @@ export default function Home() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [phiFilter, dateFilter]);
+  }, [phiFilter, dateFrom, dateTo]);
 
   const tableHeaders = useMemo(() => {
     if (mergedRows.length === 0) return [];
@@ -1175,7 +1186,9 @@ export default function Home() {
 
         <div className="bg-white rounded-xl shadow p-4 sm:p-5 md:p-6 mb-4 md:mb-6">
           <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              
               <select
                 value={phiFilter}
                 onChange={(e) =>
@@ -1189,18 +1202,32 @@ export default function Home() {
                 <option value="gte95">PHI ≥ 95</option>
               </select>
 
-              <input
-                type="date"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="rounded-md border px-3 py-2 text-sm"
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-600">From</span>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="rounded-md border px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-600">To</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="rounded-md border px-3 py-2 text-sm"
               />
+            </div>
 
               <button
                 type="button"
                 onClick={() => {
                   setPhiFilter("all");
-                  setDateFilter("");
+                  setDateFrom("");
+                  setDateTo("");
                 }}
                 className="rounded-md bg-gray-100 px-4 py-2 text-sm hover:bg-gray-200"
               >
