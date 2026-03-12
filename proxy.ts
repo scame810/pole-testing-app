@@ -24,8 +24,33 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  // Keep this in proxy.ts
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // Allow public routes
+  const publicRoutes = ["/login", "/update-password", "/auth/callback"];
+
+  if (publicRoutes.some((route) => request.nextUrl.pathname.startsWith(route))) {
+    return response;
+  }
+
+  // If not logged in → send to login
+  if (!user) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
+  // Check membership
+  const { data: membership } = await supabase
+    .from("memberships")
+    .select("org_id")
+    .eq("user_id", user.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (!membership) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
 
   return response;
 }
