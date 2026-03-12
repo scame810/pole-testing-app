@@ -2,19 +2,29 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { useRouter } from "next/navigation";
 
 export default function UpdatePasswordPage() {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
+  const router = useRouter();
 
   const updatePassword = async () => {
-    const { error } = await supabase.auth.updateUser({ password });
+    const { error } = await supabase.auth.updateUser({
+      password,
+    });
 
     if (error) {
       setStatus(error.message);
-    } else {
-      setStatus("Password updated. You can now log in.");
+      return;
     }
+
+    setStatus("Password updated successfully. Redirecting...");
+
+    setTimeout(() => {
+      router.push("/login");
+    }, 1500);
+    
   };
 
   return (
