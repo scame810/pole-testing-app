@@ -192,6 +192,11 @@ export default function Home() {
   const [mapRows, setMapRows] = useState<Row[]>([]);
   const [mapLoading, setMapLoading] = useState(false);
   const [dateTo, setDateTo] = useState("");
+  const [showImportSummary, setShowImportSummary] = useState(false);
+  const [importSummaryData, setImportSummaryData] = useState<{
+    title: string;
+    lines: string[];
+  } | null>(null);
   const saveTimersRef = useRef<Record<string, any>>({});
 
   const isOwner = activeRole === "owner";
@@ -217,7 +222,14 @@ export default function Home() {
 
       if (!mounted) return;
 
-      if (!session) {
+      const path = window.location.pathname;
+
+      // allow auth callback + password reset pages
+      const allowUnauthed =
+        path.startsWith("/auth/callback") ||
+        path.startsWith("/update-password");
+
+      if (!session && !allowUnauthed) {
         router.replace("/login");
       }
     }
@@ -227,7 +239,15 @@ export default function Home() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) router.replace("/login");
+      const path = window.location.pathname;
+
+      const allowUnauthed =
+        path.startsWith("/auth/callback") ||
+        path.startsWith("/update-password");
+
+      if (!session && !allowUnauthed) {
+        router.replace("/login");
+      }
     });
 
     return () => {
@@ -956,6 +976,14 @@ export default function Home() {
 
           setStatus(`Done. Saved ${res.count} poles.`);
           setImportSummary(`Imported ${res.count} poles`);
+          setImportSummaryData({
+            title: "Main CSV Import Complete",
+            lines: [
+              `Imported ${res.count} poles`,
+              `Organization: ${activeOrgName || activeOrgId || "Unknown"}`,
+            ],
+          });
+          setShowImportSummary(true);
           setSelectedPoleId(null);
           event.target.value = "";
         } catch (e: any) {
@@ -1011,6 +1039,14 @@ export default function Home() {
             await loadMapRows(activeOrgId);
             setStatus(`Done. Updated OHMS for ${res.count} poles.`);
             setImportSummary(`Updated OHMS for ${res.count} poles`);
+            setImportSummaryData({
+              title: "OHMS CSV Import Complete",
+              lines: [
+                `Updated OHMS for ${res.count} poles`,
+                `Organization: ${activeOrgName || activeOrgId || "Unknown"}`,
+              ],
+            });
+            setShowImportSummary(true);
             event.target.value = "";
           } catch (e: any) {
             console.error("OHMS save error full:", e);
@@ -1631,6 +1667,31 @@ export default function Home() {
           </div>
         </div>
       </div>
+      {isOwner && showImportSummary && importSummaryData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900">
+              {importSummaryData.title}
+            </h3>
+
+            <div className="mt-4 space-y-2 text-sm text-gray-700">
+              {importSummaryData.lines.map((line, idx) => (
+                <div key={idx}>{line}</div>
+              ))}
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowImportSummary(false)}
+                className="rounded-md bg-[#094929] px-4 py-2 text-sm font-medium text-white hover:bg-[#0c5a33]"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AppShell>
   );
 }
