@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
+
+export const dynamic = "force-dynamic";
 
 export default function UpdatePasswordPage() {
   const [password, setPassword] = useState("");
@@ -62,9 +64,7 @@ export default function UpdatePasswordPage() {
 
     setStatus("Updating password...");
 
-    const { error } = await supabase.auth.updateUser({
-      password,
-    });
+    const { error } = await supabase.auth.updateUser({ password });
 
     if (error) {
       setStatus(error.message);
