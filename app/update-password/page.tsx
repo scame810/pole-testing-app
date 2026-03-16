@@ -2,25 +2,33 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 export default function UpdatePasswordPage() {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   useEffect(() => {
-    const token_hash = searchParams.get("token_hash");
-    const type = searchParams.get("type");
+    async function restoreRecoverySession() {
+      const params = new URLSearchParams(window.location.search);
+      const token_hash = params.get("token_hash");
+      const type = params.get("type");
 
-    if (token_hash && type === "recovery") {
-      supabase.auth.verifyOtp({
-        token_hash,
-        type: "recovery",
-      });
+      if (token_hash && type === "recovery") {
+        const { error } = await supabase.auth.verifyOtp({
+          token_hash,
+          type: "recovery",
+        });
+
+        if (error) {
+          setStatus(error.message);
+        }
+      }
     }
-  }, [searchParams]);
+
+    restoreRecoverySession();
+  }, []);
 
   const updatePassword = async () => {
     const { error } = await supabase.auth.updateUser({
