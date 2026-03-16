@@ -2,75 +2,97 @@
 
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
-import { createServerSupabaseClient } from "../../lib/supabaseServer";
-import { sendInviteEmail } from "../../lib/mailer";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export async function inviteMember(params: {
-  orgId: string;
-  email: string;
-  role: "owner" | "member" | "viewer";
+export async function acceptInvite(params: {
+  token: string;
+  password: string;
 }) {
-  const { orgId, email, role = "member" } = params;
+  const { token, password } = params;
 
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  const user = session?.user ?? null;
-  if (!user) throw new Error("Not authenticated");
-
-  const { data: membership, error: membershipError } = await supabase
-    .from("memberships")
-    .select("role")
-    .eq("org_id", orgId)
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  if (membershipError) throw membershipError;
-  if (!membership || membership.role !== "owner") {
-    throw new Error("Only organization owners can invite users");
+  if (!token) throw new Error("Missing invite token");
+  if (!password || password.length < 8) {
+    throw new Error("Password must be at least 8 characters");
   }
 
-  const { data: org, error: orgError } = await supabase
-    .from("orgs")
-    .select("name")
-    .eq("id", orgId)
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+  const { data: invite, error: inviteError } = await supabaseAdmin
+    .from("org_invites")
+    .select("id, org_id, email, role, expires_at, accepted_at")
+    .eq("token_hash", tokenHash)
     .maybeSingle();
 
-  if (orgError) throw orgError;
-
-  const rawToken = crypto.randomBytes(32).toString("hex");
-  const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
-
-  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(); // 7 days
-
-  const { error: inviteError } = await supabaseAdmin
-    .from("org_invites")
-    .insert({
-      org_id: orgId,
-      email: email.toLowerCase().trim(),
-      role,
-      token_hash: tokenHash,
-      expires_at: expiresAt,
-    });
-
   if (inviteError) throw inviteError;
+  if (!invite) throw new Error("Invite not found");
+  if (invite.accepted_at) throw new Error("Invite has already been used");
+  if (new Date(invite.expires_at).getTime() < Date.now()) {
+    throw new Error("Invite has expired");
+  }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
-  const inviteUrl = `${siteUrl}/accept-invite?token=${rawToken}`;
+  const { data: usersResult } = await supabaseAdmin.auth.admin.listUsers();
+  const existingUser = usersResult.users.find(
+    (u) => (u.email || "").toLowerCase() === invite.email.toLowerCase()
+  );
 
-  await sendInviteEmail({
-    to: email,
-    orgName: org?.name ?? "Pole Testing Dashboard",
-    inviteUrl,
-    role,
-  });
+  let userId: string;
 
-  return { ok: true };
+  if (existingUser) {
+    throw new Error(
+      "An account for this email already exists. Please log in or use Forgot Password."
+    );
+  } else {
+    const { data: created, error: createError } =
+      await supabaseAdmin.auth.admin.createUser({
+        email: invite.email,
+        password,
+        email_confirm: true,
+      });
+
+    if (createError) throw createError;
+    if (!created.user?.id) throw new Error("Could not create user");
+
+    userId = created.user.id;
+  }
+
+  const { error: membershipError } = await supabaseAdmin
+    .from("memberships")
+    .upsert(
+      {
+        org_id: invite.org_id,
+        user_id: userId,
+        role: invite.role,
+      },
+      { onConflict: "org_id,user_id" }
+    );
+
+  if (membershipError) throw membershipError;
+
+  const { error: profileError } = await supabaseAdmin
+    .from("profiles")
+    .upsert(
+      {
+        user_id: userId,
+        active_org_id: invite.org_id,
+      },
+      { onConflict: "user_id" }
+    );
+
+  if (profileError) throw profileError;
+
+  const { error: markUsedError } = await supabaseAdmin
+    .from("org_invites")
+    .update({ accepted_at: new Date().toISOString() })
+    .eq("id", invite.id);
+
+  if (markUsedError) throw markUsedError;
+
+  return {
+    ok: true,
+    email: invite.email,
+  };
 }

@@ -1,95 +1,73 @@
-"use server";
+"use client";
 
-import crypto from "crypto";
-import { createClient } from "@supabase/supabase-js";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { acceptInvite } from "../actions/acceptInvite";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export default function AcceptInvitePage() {
+  const router = useRouter();
+  const [password, setPassword] = useState("");
+  const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(false);
 
-export async function acceptInvite(params: {
-  token: string;
-  password: string;
-}) {
-  const { token, password } = params;
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
 
-  if (!token) throw new Error("Missing invite token");
-  if (!password || password.length < 8) {
-    throw new Error("Password must be at least 8 characters");
+    const token =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("token") ?? ""
+        : "";
+
+    if (!token) {
+      setStatus("Missing invite token");
+      return;
+    }
+
+    setLoading(true);
+    setStatus("");
+
+    try {
+      const result = await acceptInvite({ token, password });
+      setStatus("Password created successfully. Redirecting to login...");
+
+      setTimeout(() => {
+        router.push(`/login?email=${encodeURIComponent(result.email)}`);
+      }, 1200);
+    } catch (err: any) {
+      setStatus(err?.message || "Could not accept invite");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  return (
+    <main className="min-h-screen flex items-center justify-center bg-gray-100 p-6">
+      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow">
+        <h1 className="mb-4 text-2xl font-bold">Accept Invite</h1>
+        <p className="mb-4 text-sm text-gray-600">
+          Create your password to access the dashboard.
+        </p>
 
-  const { data: invite, error: inviteError } = await supabaseAdmin
-    .from("org_invites")
-    .select("id, org_id, email, role, expires_at, accepted_at")
-    .eq("token_hash", tokenHash)
-    .maybeSingle();
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input
+            type="password"
+            placeholder="Create password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full rounded border p-3"
+          />
 
-  if (inviteError) throw inviteError;
-  if (!invite) throw new Error("Invite not found");
-  if (invite.accepted_at) throw new Error("Invite has already been used");
-  if (new Date(invite.expires_at).getTime() < Date.now()) {
-    throw new Error("Invite has expired");
-  }
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded bg-[#094929] px-4 py-3 text-white disabled:opacity-50"
+          >
+            {loading ? "Creating account..." : "Set Password"}
+          </button>
+        </form>
 
-  const { data: usersResult } = await supabaseAdmin.auth.admin.listUsers();
-  const existingUser = usersResult.users.find(
-    (u) => (u.email || "").toLowerCase() === invite.email.toLowerCase()
+        {status && <p className="mt-4 text-sm text-gray-700">{status}</p>}
+      </div>
+    </main>
   );
-
-  let userId: string;
-
-  if (existingUser) {
-    throw new Error("An account for this email already exists. Please log in or use Forgot Password.");
-  } else {
-    const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
-      email: invite.email,
-      password,
-      email_confirm: true,
-    });
-
-    if (createError) throw createError;
-    if (!created.user?.id) throw new Error("Could not create user");
-
-    userId = created.user.id;
-  }
-
-  const { error: membershipError } = await supabaseAdmin
-    .from("memberships")
-    .upsert(
-      {
-        org_id: invite.org_id,
-        user_id: userId,
-        role: invite.role,
-      },
-      { onConflict: "org_id,user_id" }
-    );
-
-  if (membershipError) throw membershipError;
-
-  const { error: profileError } = await supabaseAdmin
-    .from("profiles")
-    .upsert(
-      {
-        user_id: userId,
-        active_org_id: invite.org_id,
-      },
-      { onConflict: "user_id" }
-    );
-
-  if (profileError) throw profileError;
-
-  const { error: markUsedError } = await supabaseAdmin
-    .from("org_invites")
-    .update({ accepted_at: new Date().toISOString() })
-    .eq("id", invite.id);
-
-  if (markUsedError) throw markUsedError;
-
-  return {
-    ok: true,
-    email: invite.email,
-  };
 }
