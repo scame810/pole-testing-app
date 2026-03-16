@@ -29,7 +29,7 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   // Allow public routes
-  const publicRoutes = ["/login", "/update-password", "/auth/callback"];
+  const publicRoutes = ["/login", "/update-password", "/auth/callback", "/accept-invite"];
 
   if (publicRoutes.some((route) => request.nextUrl.pathname.startsWith(route))) {
     return response;
