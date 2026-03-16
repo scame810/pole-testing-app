@@ -6,52 +6,14 @@ import { useRouter } from "next/navigation";
 
 export default function UpdatePasswordPage() {
   const [password, setPassword] = useState("");
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState("Checking recovery session...");
   const [ready, setReady] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
-    async function restoreSession() {
-      try {
-        const query = new URLSearchParams(window.location.search);
-        const token_hash = query.get("token_hash");
-        const type = query.get("type");
-
-        const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-        const access_token = hash.get("access_token");
-        const refresh_token = hash.get("refresh_token");
-        const hashType = hash.get("type");
-
-        // 1) token_hash flow
-        if (token_hash && (type === "recovery" || type === "invite")) {
-          const { error } = await supabase.auth.verifyOtp({
-            token_hash,
-            type: type as "recovery" | "invite",
-          });
-
-          if (error) {
-            setStatus(error.message);
-            return;
-          }
-        }
-
-        // 2) hash fragment flow
-        else if (
-          access_token &&
-          refresh_token &&
-          (hashType === "recovery" || hashType === "invite")
-        ) {
-          const { error } = await supabase.auth.setSession({
-            access_token,
-            refresh_token,
-          });
-
-          if (error) {
-            setStatus(error.message);
-            return;
-          }
-        }
-
+    async function checkSession() {
+      // Give Supabase a moment to process URL auth params/hash
+      setTimeout(async () => {
         const {
           data: { session },
         } = await supabase.auth.getSession();
@@ -62,12 +24,11 @@ export default function UpdatePasswordPage() {
         }
 
         setReady(true);
-      } catch (err: any) {
-        setStatus(err?.message || "Could not restore session.");
-      }
+        setStatus("");
+      }, 500);
     }
 
-    restoreSession();
+    checkSession();
   }, []);
 
   const updatePassword = async () => {
