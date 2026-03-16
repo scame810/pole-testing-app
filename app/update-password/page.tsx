@@ -3,6 +3,22 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { useSearchParams } from "next/navigation";
+
+const searchParams = useSearchParams();
+
+useEffect(() => {
+  const token_hash = searchParams.get("token_hash");
+  const type = searchParams.get("type");
+
+  if (token_hash && type === "recovery") {
+    supabase.auth.verifyOtp({
+      token_hash,
+      type: "recovery",
+    });
+  }
+}, []);
 
 export default function UpdatePasswordPage() {
   const [password, setPassword] = useState("");
