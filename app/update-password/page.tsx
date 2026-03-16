@@ -7,33 +7,88 @@ import { useRouter } from "next/navigation";
 export default function UpdatePasswordPage() {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
+  const [ready, setReady] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
-    async function restoreSessionFromUrl() {
-      const params = new URLSearchParams(window.location.search);
-      const token_hash = params.get("token_hash");
-      const type = params.get("type");
+    async function restoreSession() {
+      try {
+        const query = new URLSearchParams(window.location.search);
 
-      if (
-        token_hash &&
-        (type === "recovery" || type === "invite")
-      ) {
-        const { error } = await supabase.auth.verifyOtp({
-          token_hash,
-          type: type as "recovery" | "invite",
-        });
+        const code = query.get("code");
+        const token_hash = query.get("token_hash");
+        const type = query.get("type");
 
-        if (error) {
-          setStatus(error.message);
+        const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+        const access_token = hash.get("access_token");
+        const refresh_token = hash.get("refresh_token");
+        const hashType = hash.get("type");
+
+        // 1) PKCE / code flow
+        if (code) {
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) {
+            setStatus(error.message);
+            return;
+          }
         }
+
+        // 2) token_hash flow (invite/recovery)
+        else if (token_hash && (type === "recovery" || type === "invite")) {
+          const { error } = await supabase.auth.verifyOtp({
+            token_hash,
+            type: type as "recovery" | "invite",
+          });
+
+          if (error) {
+            setStatus(error.message);
+            return;
+          }
+        }
+
+        // 3) hash fragment flow (common for reset password)
+        else if (
+          access_token &&
+          refresh_token &&
+          (hashType === "recovery" || hashType === "invite")
+        ) {
+          const { error } = await supabase.auth.setSession({
+            access_token,
+            refresh_token,
+          });
+
+          if (error) {
+            setStatus(error.message);
+            return;
+          }
+        }
+
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!session) {
+          setStatus("Recovery session not found. Please request a new reset email.");
+          return;
+        }
+
+        setReady(true);
+      } catch (err: any) {
+        setStatus(err?.message || "Could not restore session.");
       }
     }
 
-    restoreSessionFromUrl();
+    restoreSession();
   }, []);
 
   const updatePassword = async () => {
+    if (!ready) {
+      setStatus("Recovery session not ready yet.");
+      return;
+    }
+
+    setStatus("Updating password...");
+
     const { error } = await supabase.auth.updateUser({
       password,
     });
@@ -65,6 +120,7 @@ export default function UpdatePasswordPage() {
       <button
         onClick={updatePassword}
         className="bg-black text-white px-4 py-2 rounded"
+        disabled={!ready}
       >
         Update Password
       </button>
