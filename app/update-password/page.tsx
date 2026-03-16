@@ -14,8 +14,6 @@ export default function UpdatePasswordPage() {
     async function restoreSession() {
       try {
         const query = new URLSearchParams(window.location.search);
-
-        const code = query.get("code");
         const token_hash = query.get("token_hash");
         const type = query.get("type");
 
@@ -24,17 +22,8 @@ export default function UpdatePasswordPage() {
         const refresh_token = hash.get("refresh_token");
         const hashType = hash.get("type");
 
-        // 1) PKCE / code flow
-        if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
-          if (error) {
-            setStatus(error.message);
-            return;
-          }
-        }
-
-        // 2) token_hash flow (invite/recovery)
-        else if (token_hash && (type === "recovery" || type === "invite")) {
+        // 1) token_hash flow
+        if (token_hash && (type === "recovery" || type === "invite")) {
           const { error } = await supabase.auth.verifyOtp({
             token_hash,
             type: type as "recovery" | "invite",
@@ -46,7 +35,7 @@ export default function UpdatePasswordPage() {
           }
         }
 
-        // 3) hash fragment flow (common for reset password)
+        // 2) hash fragment flow
         else if (
           access_token &&
           refresh_token &&
