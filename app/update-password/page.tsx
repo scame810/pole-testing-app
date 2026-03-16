@@ -6,29 +6,52 @@ import { useRouter } from "next/navigation";
 
 export default function UpdatePasswordPage() {
   const [password, setPassword] = useState("");
-  const [status, setStatus] = useState("Checking recovery session...");
+  const [status, setStatus] = useState("Preparing password reset...");
   const [ready, setReady] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
-    async function checkSession() {
-      // Give Supabase a moment to process URL auth params/hash
-      setTimeout(async () => {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+    let unsub: (() => void) | null = null;
 
-        if (!session) {
-          setStatus("Recovery session not found. Please request a new reset email.");
-          return;
-        }
+    async function init() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
+      if (session) {
         setReady(true);
         setStatus("");
-      }, 500);
+        return;
+      }
+
+      const { data } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === "PASSWORD_RECOVERY" && session) {
+          setReady(true);
+          setStatus("");
+        }
+      });
+
+      unsub = () => data.subscription.unsubscribe();
+
+      setTimeout(async () => {
+        const {
+          data: { session: latestSession },
+        } = await supabase.auth.getSession();
+
+        if (latestSession) {
+          setReady(true);
+          setStatus("");
+        } else {
+          setStatus("Recovery session not found. Please request a new reset email.");
+        }
+      }, 2500);
     }
 
-    checkSession();
+    init();
+
+    return () => {
+      if (unsub) unsub();
+    };
   }, []);
 
   const updatePassword = async () => {
@@ -69,7 +92,7 @@ export default function UpdatePasswordPage() {
 
       <button
         onClick={updatePassword}
-        className="bg-black text-white px-4 py-2 rounded"
+        className="bg-black text-white px-4 py-2 rounded disabled:opacity-50"
         disabled={!ready}
       >
         Update Password
