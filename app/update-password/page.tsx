@@ -10,15 +10,18 @@ export default function UpdatePasswordPage() {
   const router = useRouter();
 
   useEffect(() => {
-    async function restoreRecoverySession() {
+    async function restoreSessionFromUrl() {
       const params = new URLSearchParams(window.location.search);
       const token_hash = params.get("token_hash");
       const type = params.get("type");
 
-      if (token_hash && type === "recovery") {
+      if (
+        token_hash &&
+        (type === "recovery" || type === "invite")
+      ) {
         const { error } = await supabase.auth.verifyOtp({
           token_hash,
-          type: "recovery",
+          type: type as "recovery" | "invite",
         });
 
         if (error) {
@@ -27,7 +30,7 @@ export default function UpdatePasswordPage() {
       }
     }
 
-    restoreRecoverySession();
+    restoreSessionFromUrl();
   }, []);
 
   const updatePassword = async () => {
