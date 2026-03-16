@@ -52,9 +52,12 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  return response;
-}
+  // prevent caching of auth responses
+  response.headers.set("Cache-Control", "private, no-store");
 
-export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  return response;
+  }
+
+  export const config = {
+    matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
   const next = url.searchParams.get("next") ?? "/login";
 
   const response = NextResponse.redirect(new URL(next, url.origin));
+  response.headers.set("Cache-Control", "private, no-store");
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
