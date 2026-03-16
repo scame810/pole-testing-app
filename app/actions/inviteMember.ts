@@ -43,7 +43,7 @@ export async function inviteMember(params: {
     process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 
   const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-    redirectTo: `${siteUrl}/auth/callback?next=/update-password`,
+    redirectTo: `${siteUrl}/login`,
   });
 
   if (error) {
