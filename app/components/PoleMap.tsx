@@ -51,8 +51,8 @@ function getMarkerColor(data?: Record<string, any>) {
   const phi = getPhiValue(data);
 
   if (phi === null) return "#2563eb"; // blue fallback
-  if (phi <= 75) return "#dc2626"; // red
-  if (phi <= 94) return "#eab308"; // yellow
+  if (phi <= 69) return "#dc2626"; // red
+  if (phi <= 90) return "#eab308"; // yellow
   return "#16a34a"; // green (95+)
 }
 

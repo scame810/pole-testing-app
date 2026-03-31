@@ -182,7 +182,7 @@ export default function Home() {
   const [activeOrgName, setActiveOrgName] = useState<string>("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteStatus, setInviteStatus] = useState("");
-  const [phiFilter, setPhiFilter] = useState<"all" | "lt80" | "80to94" | "gte95">("all");
+  const [phiFilter, setPhiFilter] = useState<"all" | "lte69" | "70to89" | "gte90">("all");
   const [dateFrom, setDateFrom] = useState("");
   const [tableRows, setTableRows] = useState<Row[]>([]);
   const [tableTotalRows, setTableTotalRows] = useState(0);
@@ -328,9 +328,9 @@ export default function Home() {
         .select("pole_id", { count: "exact" })
         .eq("org_id", activeOrgId);
 
-      if (phiFilter === "lt80") query = query.lt("phi", 80);
-      if (phiFilter === "80to94") query = query.gte("phi", 80).lte("phi", 94);
-      if (phiFilter === "gte95") query = query.gte("phi", 95);
+      if (phiFilter === "lte69") query = query.lte("phi", 69);
+      if (phiFilter === "70to89") query = query.gte("phi", 70).lte("phi", 89);
+      if (phiFilter === "gte90") query = query.gte("phi", 90);
 
       if (dateFrom) query = query.gte("date_tested", dateFrom);
       if (dateTo) query = query.lte("date_tested", dateTo);
@@ -511,9 +511,9 @@ export default function Home() {
         })  
         .eq("org_id", orgId);
 
-      if (phiFilter === "lt80") query = query.lt("phi", 80);
-      if (phiFilter === "80to94") query = query.gte("phi", 80).lte("phi", 94);
-      if (phiFilter === "gte95") query = query.gte("phi", 95);
+      if (phiFilter === "lte69") query = query.lte("phi", 69);
+      if (phiFilter === "70to89") query = query.gte("phi", 70).lte("phi", 89);
+      if (phiFilter === "gte90") query = query.gte("phi", 90);
 
       if (dateFrom) query = query.gte("date_tested", dateFrom);
       if (dateTo) query = query.lte("date_tested", dateTo);
@@ -565,9 +565,9 @@ export default function Home() {
         .eq("org_id", orgId)
         .limit(10000);
 
-      if (phiFilter === "lt80") query = query.lt("phi", 80);
-      if (phiFilter === "80to94") query = query.gte("phi", 80).lte("phi", 94);
-      if (phiFilter === "gte95") query = query.gte("phi", 95);
+      if (phiFilter === "lte69") query = query.lte("phi", 69);
+      if (phiFilter === "70to89") query = query.gte("phi", 70).lte("phi", 89);
+      if (phiFilter === "gte90") query = query.gte("phi", 90);
 
       if (dateFrom) query = query.gte("date_tested", dateFrom);
       if (dateTo) query = query.lte("date_tested", dateTo);
@@ -1378,14 +1378,14 @@ export default function Home() {
               <select
                 value={phiFilter}
                 onChange={(e) =>
-                  setPhiFilter(e.target.value as "all" | "lt80" | "80to94" | "gte95")
+                  setPhiFilter(e.target.value as "all" | "lte69" | "70to89" | "gte90")
                 }
                 className="rounded-md border px-3 py-2 text-sm"
               >
                 <option value="all">All PHI</option>
-                <option value="lt80">PHI &lt; 80</option>
-                <option value="80to94">PHI 80–94</option>
-                <option value="gte95">PHI ≥ 95</option>
+                <option value="lte69">PHI ≤ 69</option>
+                <option value="70to89">PHI 70–89</option>
+                <option value="gte90">PHI ≥ 90</option>
               </select>
 
               <div className="flex items-center gap-2">
