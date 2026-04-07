@@ -16,10 +16,7 @@ const navItems = [
 type MembershipRow = {
   org_id: string;
   role: string;
-  orgs?: {
-    id: string;
-    name: string | null;
-  }[] | null;
+  org_name: string | null;
 };
 
 export default function AppShell({
@@ -66,7 +63,12 @@ export default function AppShell({
       return;
     }
 
-    const rows = (data || []) as MembershipRow[];
+    const rows: MembershipRow[] = (data || []).map((row: any) => ({
+      org_id: row.org_id,
+      role: row.role,
+      org_name: row.orgs?.[0]?.name ?? null,
+    }));
+
     setMemberships(rows);
 
     const savedOrgId = window.localStorage.getItem("selectedOrgId");
@@ -162,7 +164,7 @@ export default function AppShell({
             ) : (
               memberships.map((item) => (
                 <option key={item.org_id} value={item.org_id}>
-                  {item.orgs?.[0]?.name || item.org_id}
+                  {item.org_name || item.org_id}
                 </option>
               ))
             )}
