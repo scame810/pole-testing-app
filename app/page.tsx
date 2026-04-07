@@ -426,34 +426,27 @@ export default function Home() {
     const user = session?.user ?? null;
     if (!user) return null;
 
-    const { data: profile, error: pErr } = await supabase
-      .from("profiles")
-      .select("active_org_id")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    if (pErr) throw pErr;
-
-    if (profile?.active_org_id) {
-      setActiveOrgId(profile.active_org_id);
-      return profile.active_org_id;
-    }
+    const savedOrgId = window.localStorage.getItem("selectedOrgId");
 
     const { data: mems, error: mErr } = await supabase
       .from("memberships")
       .select("org_id")
-      .eq("user_id", user.id)
-      .limit(1);
+      .eq("user_id", user.id);
 
     if (mErr) throw mErr;
 
-    const firstOrg = mems?.[0]?.org_id ?? null;
+    const membershipOrgIds = (mems ?? []).map((m: any) => m.org_id);
+
+    if (savedOrgId && membershipOrgIds.includes(savedOrgId)) {
+      setActiveOrgId(savedOrgId);
+      return savedOrgId;
+    }
+
+    const firstOrg = membershipOrgIds[0] ?? null;
     setActiveOrgId(firstOrg);
 
     if (firstOrg) {
-      await supabase
-        .from("profiles")
-        .upsert({ user_id: user.id, active_org_id: firstOrg }, { onConflict: "user_id" });
+      window.localStorage.setItem("selectedOrgId", firstOrg);
     }
 
     return firstOrg;
@@ -637,7 +630,7 @@ export default function Home() {
   }
 
   useEffect(() => {
-    (async () => {
+    async function initializeDashboard() {
       try {
         const orgId = await loadActiveOrg();
         if (!orgId) {
@@ -647,11 +640,18 @@ export default function Home() {
 
         const owners = await loadOwnerOrgs();
         setOwnerOrgs(owners);
-        const active = owners.find(o => o.org_id === orgId);
-        if (active) setActiveOrgName(active.name ?? active.org_id);
+
+        const active = owners.find((o) => o.org_id === orgId);
+        if (active) {
+          setActiveOrgName(active.name ?? active.org_id);
+        } else {
+          setActiveOrgName(orgId);
+        }
 
         await loadActiveRole(orgId);
         await loadPolesFromSupabase(orgId);
+        await loadTablePage(orgId);
+        await loadMapRows(orgId);
       } catch (e: any) {
         console.error("Error loading org:", e);
 
@@ -663,7 +663,19 @@ export default function Home() {
 
         setSupabaseStatus(`Error loading org: ${msg}`);
       }
-    })();
+    }
+
+    initializeDashboard();
+
+    async function handleSelectedOrgChanged() {
+      await initializeDashboard();
+    }
+
+    window.addEventListener("selected-org-changed", handleSelectedOrgChanged);
+
+    return () => {
+      window.removeEventListener("selected-org-changed", handleSelectedOrgChanged);
+    };
   }, [supabase]);
 
   async function upsertPolesToSupabase(rows: Row[]) {
@@ -1157,51 +1169,6 @@ export default function Home() {
                 <input type="file" accept=".csv" hidden onChange={handleOHMSCSVUpload} />
               </label>
             </>
-
-            {ownerOrgs.length > 1 && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-700">Org:</span>
-                <select
-                  className="w-full sm:w-[260px] border rounded-md p-2 text-sm"
-                  value={activeOrgId ?? ""}
-                  onChange={async (e) => {
-                    const nextOrg = e.target.value;
-                    setActiveOrgId(nextOrg);
-
-                    const selected = ownerOrgs.find(o => o.org_id === nextOrg);
-                    if (selected) setActiveOrgName(selected.name ?? selected.org_id);
-                    
-                    const {
-                      data: { session },
-                    } = await supabase.auth.getSession();
-
-                    const user = session?.user ?? null;
-
-                    if (user) {
-                      const { error } = await supabase
-                        .from("profiles")
-                        .update({ active_org_id: nextOrg })
-                        .eq("user_id", user.id);
-
-                      if (error) {
-                        console.error(error);
-                        alert("Not allowed to switch organizations.");
-                        return;
-                      }
-                    }
-
-                    await loadActiveRole(nextOrg);
-                    await loadPolesFromSupabase(nextOrg);
-                  }}
-                >
-                  {ownerOrgs.map((o) => (
-                    <option key={o.org_id} value={o.org_id}>
-                      {o.name ?? o.org_id}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
 
             <button
               className="bg-gray-200 px-4 py-2 rounded-lg hover:bg-gray-300"
