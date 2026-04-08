@@ -721,107 +721,144 @@ export default function Home() {
   }
 
   const exportCombinedCsv = async () => {
-  if (!activeOrgId) return;
+    if (!activeOrgId) return;
 
-  try {
-    const pageSize = 1000;
-    let from = 0;
-    let allRows: Row[] = [];
+    try {
+      const pageSize = 1000;
+      let from = 0;
+      let allRows: Row[] = [];
 
-    while (true) {
-      let query = supabase
-        .from("poles")
-        .select("pole_id, latitude, longitude, phi, date_tested, data, comments")
-        .eq("org_id", activeOrgId);
+      while (true) {
+        let query = supabase
+          .from("poles")
+          .select("pole_id, latitude, longitude, phi, date_tested, data, comments")
+          .eq("org_id", activeOrgId);
 
-      if (phiFilter === "lte69") query = query.lte("phi", 69);
-      if (phiFilter === "70to89") query = query.gte("phi", 70).lte("phi", 89);
-      if (phiFilter === "gte90") query = query.gte("phi", 90);
+        if (phiFilter === "lte69") query = query.lte("phi", 69);
+        if (phiFilter === "70to89") query = query.gte("phi", 70).lte("phi", 89);
+        if (phiFilter === "gte90") query = query.gte("phi", 90);
 
-      if (dateFrom) query = query.gte("date_tested", dateFrom);
-      if (dateTo) query = query.lte("date_tested", dateTo);
+        if (dateFrom) query = query.gte("date_tested", dateFrom);
+        if (dateTo) query = query.lte("date_tested", dateTo);
 
-      const sortKey = getServerSortColumn(sortColumn);
-      query = query.order(sortKey, { ascending: sortDirection === "asc" });
+        const sortKey = getServerSortColumn(sortColumn);
+        query = query.order(sortKey, { ascending: sortDirection === "asc" });
 
-      const { data, error } = await query.range(from, from + pageSize - 1);
+        const { data, error } = await query.range(from, from + pageSize - 1);
 
-      if (error) throw error;
-      if (!data || data.length === 0) break;
+        if (error) throw error;
+        if (!data || data.length === 0) break;
 
-      const rows: Row[] = data.map((r: any) => ({
-        "Pole ID": r.pole_id,
-        Latitude: r.latitude,
-        Longitude: r.longitude,
-        ...(r.data ?? {}),
-        Comments: r.comments ?? "",
-      }));
+        const rows: Row[] = data.map((r: any) => ({
+          "Pole ID": r.pole_id,
+          Latitude: r.latitude,
+          Longitude: r.longitude,
+          ...(r.data ?? {}),
+          Comments: r.comments ?? "",
+        }));
 
-      allRows = [...allRows, ...rows];
+        allRows = [...allRows, ...rows];
 
-      if (data.length < pageSize) break;
-      from += pageSize;
+        if (data.length < pageSize) break;
+        from += pageSize;
+      }
+
+      if (allRows.length === 0) return;
+
+      const ordered = allRows.map((r) => {
+        const out: Record<string, any> = {};
+        for (const h of tableHeaders) out[h] = (r as any)?.[h] ?? "";
+        return out;
+      });
+
+      const csv = Papa.unparse(ordered);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `pole-report-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("Export failed:", e);
     }
+  };
 
-    if (allRows.length === 0) return;
+  const exportSelectedCsv = async () => {
+    if (!activeOrgId) return;
 
-    const ordered = allRows.map((r) => {
-      const out: Record<string, any> = {};
-      for (const h of tableHeaders) out[h] = (r as any)?.[h] ?? "";
-      return out;
-    });
+    const selectedIds = Object.keys(selectedPoleIds).filter((id) => selectedPoleIds[id]);
+    if (selectedIds.length === 0) return;
 
-    const csv = Papa.unparse(ordered);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
+    try {
+      const pageSize = 1000;
+      let allRows: Row[] = [];
 
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `pole-report-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+      for (let i = 0; i < selectedIds.length; i += pageSize) {
+        const idChunk = selectedIds.slice(i, i + pageSize);
 
-    URL.revokeObjectURL(url);
-  } catch (e) {
-    console.error("Export failed:", e);
-  }
-};
+        let query = supabase
+          .from("poles")
+          .select("pole_id, latitude, longitude, phi, date_tested, data, comments")
+          .eq("org_id", activeOrgId)
+          .in("pole_id", idChunk);
 
-  const exportSelectedCsv = () => {
-    const selectedRows = tableRows.filter((row) => {
-      const id = getPoleId(row) ?? "";
-      return !!selectedPoleIds[id];
-    });
+        if (phiFilter === "lte69") query = query.lte("phi", 69);
+        if (phiFilter === "70to89") query = query.gte("phi", 70).lte("phi", 89);
+        if (phiFilter === "gte90") query = query.gte("phi", 90);
 
-    if (selectedRows.length === 0) return;
+        if (dateFrom) query = query.gte("date_tested", dateFrom);
+        if (dateTo) query = query.lte("date_tested", dateTo);
 
-    const rowsWithComments = selectedRows.map((row) => {
-      const id = getPoleId(row) ?? "";
-      return {
-        ...row,
-        Comments: commentsByPole[id] ?? "",
-      };
-    });
+        const { data, error } = await query;
 
-    const ordered = rowsWithComments.map((r) => {
-      const out: Record<string, any> = {};
-      for (const h of tableHeaders) out[h] = (r as any)?.[h] ?? "";
-      return out;
-    });
+        if (error) throw error;
 
-    const csv = Papa.unparse(ordered);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
+        const rows: Row[] = (data ?? []).map((r: any) => ({
+          "Pole ID": r.pole_id,
+          Latitude: r.latitude,
+          Longitude: r.longitude,
+          ...(r.data ?? {}),
+          Comments: r.comments ?? "",
+        }));
 
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `selected-poles-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+        allRows = [...allRows, ...rows];
+      }
 
-    URL.revokeObjectURL(url);
+      if (allRows.length === 0) return;
+
+      const selectedOrder = new Map(selectedIds.map((id, index) => [id, index]));
+      allRows.sort((a, b) => {
+        const aId = getPoleId(a) ?? "";
+        const bId = getPoleId(b) ?? "";
+        return (selectedOrder.get(aId) ?? 0) - (selectedOrder.get(bId) ?? 0);
+      });
+
+      const ordered = allRows.map((r) => {
+        const out: Record<string, any> = {};
+        for (const h of tableHeaders) out[h] = (r as any)?.[h] ?? "";
+        return out;
+      });
+
+      const csv = Papa.unparse(ordered);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `selected-poles-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("Selected export failed:", e);
+    }
   };
 
   const selectedCount = Object.values(selectedPoleIds).filter(Boolean).length;
