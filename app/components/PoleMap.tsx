@@ -157,55 +157,27 @@ function SelectedController({
   return null;
 }
 
-function ZoomToAllController({
-  points,
-  trigger,
-}: {
-  points: PolePoint[];
-  trigger: number;
-}) {
-  const map = useMap();
-  const didInitialFit = useRef(false);
-
-  useEffect(() => {
-    if (!points.length) return;
-
-    const bounds = L.latLngBounds(
-      points.map((p) => [p.lat, p.lng] as [number, number])
-    );
-
-    const timeout = setTimeout(() => {
-      if (!didInitialFit.current || trigger > 0) {
-        map.fitBounds(bounds, { padding: [30, 30] });
-        didInitialFit.current = true;
-      }
-    }, 50);
-
-    return () => clearTimeout(timeout);
-  }, [map, points, trigger]);
-
-  return null;
-}
-
 function ClusterLayer({
   points,
   onSelect,
   markerRefs,
   clusterGroupRef,
+  zoomToAllTrigger,
 }: {
   points: PolePoint[];
   onSelect: (id: string) => void;
   markerRefs: React.MutableRefObject<Map<string, L.Marker>>;
   clusterGroupRef: React.MutableRefObject<any | null>;
+  zoomToAllTrigger: number;
 }) {
   const map = useMap();
   const onSelectRef = useRef(onSelect);
+  const didInitialFitRef = useRef(false);
 
   useEffect(() => {
     onSelectRef.current = onSelect;
   }, [onSelect]);
 
-  // create the cluster group once
   useEffect(() => {
     const clusterGroup = (L as any).markerClusterGroup({
       chunkedLoading: false,
@@ -222,10 +194,10 @@ function ClusterLayer({
       }
       clusterGroupRef.current = null;
       markerRefs.current.clear();
+      didInitialFitRef.current = false;
     };
   }, [map, clusterGroupRef, markerRefs]);
 
-  // update markers when points change
   useEffect(() => {
     const clusterGroup = clusterGroupRef.current;
     if (!clusterGroup) return;
@@ -253,7 +225,21 @@ function ClusterLayer({
       markerRefs.current.set(p.id, marker);
       clusterGroup.addLayer(marker);
     });
-  }, [points, clusterGroupRef, markerRefs]);
+
+    const shouldFit = !didInitialFitRef.current || zoomToAllTrigger > 0;
+
+    if (shouldFit && points.length > 0) {
+      const timeout = setTimeout(() => {
+        const bounds = clusterGroup.getBounds?.();
+        if (bounds && bounds.isValid && bounds.isValid()) {
+          map.fitBounds(bounds, { padding: [30, 30] });
+          didInitialFitRef.current = true;
+        }
+      }, 150);
+
+      return () => clearTimeout(timeout);
+    }
+  }, [points, map, clusterGroupRef, markerRefs, zoomToAllTrigger]);
 
   return null;
 }
@@ -300,6 +286,7 @@ export default function PoleMap({
           onSelect={onSelect}
           markerRefs={markerRefs}
           clusterGroupRef={clusterGroupRef}
+          zoomToAllTrigger={zoomToAllTrigger}
         />
 
         <SelectedController
@@ -308,8 +295,6 @@ export default function PoleMap({
           markerRefs={markerRefs}
           clusterGroupRef={clusterGroupRef}
         />
-
-        <ZoomToAllController points={points} trigger={zoomToAllTrigger} />
       </MapContainer>
     </div>
   );
