@@ -1401,7 +1401,6 @@ export default function Home() {
                   await goToPoleInTable(id);
                 }}
                 zoomToAllTrigger={zoomToAllTrigger}
-                fieldOrder={tableHeaders}
               />
             </div>
           )}

@@ -165,12 +165,23 @@ function ZoomToAllController({
   trigger: number;
 }) {
   const map = useMap();
+  const didInitialFit = useRef(false);
 
   useEffect(() => {
     if (!points.length) return;
 
-    const bounds = L.latLngBounds(points.map((p) => [p.lat, p.lng] as [number, number]));
-    map.fitBounds(bounds, { padding: [30, 30] });
+    const bounds = L.latLngBounds(
+      points.map((p) => [p.lat, p.lng] as [number, number])
+    );
+
+    const timeout = setTimeout(() => {
+      if (!didInitialFit.current || trigger > 0) {
+        map.fitBounds(bounds, { padding: [30, 30] });
+        didInitialFit.current = true;
+      }
+    }, 50);
+
+    return () => clearTimeout(timeout);
   }, [map, points, trigger]);
 
   return null;
@@ -181,30 +192,50 @@ function ClusterLayer({
   onSelect,
   markerRefs,
   clusterGroupRef,
-  fieldOrder,
 }: {
   points: PolePoint[];
   onSelect: (id: string) => void;
   markerRefs: React.MutableRefObject<Map<string, L.Marker>>;
   clusterGroupRef: React.MutableRefObject<any | null>;
-  fieldOrder: string[];
 }) {
   const map = useMap();
-
   const onSelectRef = useRef(onSelect);
+
   useEffect(() => {
     onSelectRef.current = onSelect;
   }, [onSelect]);
 
+  // create the cluster group once
   useEffect(() => {
     const clusterGroup = (L as any).markerClusterGroup({
-      chunkedLoading: true,
+      chunkedLoading: false,
     });
 
     clusterGroupRef.current = clusterGroup;
+    map.addLayer(clusterGroup);
+
+    return () => {
+      try {
+        map.removeLayer(clusterGroup);
+      } catch {
+        // ignore
+      }
+      clusterGroupRef.current = null;
+      markerRefs.current.clear();
+    };
+  }, [map, clusterGroupRef, markerRefs]);
+
+  // update markers when points change
+  useEffect(() => {
+    const clusterGroup = clusterGroupRef.current;
+    if (!clusterGroup) return;
+
+    clusterGroup.clearLayers();
+    markerRefs.current.clear();
 
     points.forEach((p) => {
       const markerColor = getMarkerColor(p.data);
+
       const marker = L.marker([p.lat, p.lng], {
         icon: makeColorIcon(markerColor),
       });
@@ -222,19 +253,7 @@ function ClusterLayer({
       markerRefs.current.set(p.id, marker);
       clusterGroup.addLayer(marker);
     });
-
-    map.addLayer(clusterGroup);
-
-    return () => {
-      try {
-        map.removeLayer(clusterGroup);
-      } catch {
-        // ignore
-      }
-      markerRefs.current.clear();
-      clusterGroupRef.current = null;
-    };
-  }, [points, map, markerRefs, clusterGroupRef, fieldOrder]);
+  }, [points, clusterGroupRef, markerRefs]);
 
   return null;
 }
@@ -244,24 +263,17 @@ export default function PoleMap({
   selected,
   onSelect,
   zoomToAllTrigger = 0,
-  fieldOrder = [],
 }: {
   points: PolePoint[];
   selected?: PolePoint | null;
   onSelect: (id: string) => void;
   zoomToAllTrigger?: number;
-  fieldOrder?: string[];
 }) {
   const markerRefs = useRef<Map<string, L.Marker>>(new Map());
   const clusterGroupRef = useRef<any | null>(null);
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-
-  const mapKey = useMemo(() => {
-    const first = points?.[0]?.id ?? "none";
-    return `${points.length}-${first}`;
-  }, [points]);
 
   const center: [number, number] = selected
     ? [selected.lat, selected.lng]
@@ -274,7 +286,6 @@ export default function PoleMap({
   return (
     <div className="w-full h-[500px]">
       <MapContainer
-        key={mapKey}
         center={center}
         zoom={selected ? 16 : 5}
         className="w-full h-full"
@@ -289,7 +300,6 @@ export default function PoleMap({
           onSelect={onSelect}
           markerRefs={markerRefs}
           clusterGroupRef={clusterGroupRef}
-          fieldOrder={fieldOrder}
         />
 
         <SelectedController
