@@ -75,32 +75,12 @@ function makeColorIcon(color: string) {
   });
 }
 
-function buildPopupHtml(pole: Record<string, any>, fieldOrder: string[] = []) {
-  const id = pole["Pole ID"] ?? pole["PoleID"] ?? pole["id"] ?? "";
-
-  const fallbackOrder = [
+function buildPopupHtml(pole: Record<string, any>) {
+  const orderedKeys = [
     "Pole ID",
-    "Latitude",
-    "Longitude",
     "Date Tested",
-    "Test Observations",
     "Pole Health Index(PHI)",
-    "Foundation Health Index(FHI)",
-    "RSV (%)",
-    "Pole Length (ft)",
-    "Measured Diameter (inches)",
-    "Images",
-    "OHMS",
-    "Ground Rods",
-    "OHMS Rod 1",
-    "GW Repair",
-    "Guy Markers",
-    "Comments",
   ];
-
-  const preferredKeys = fieldOrder.length ? fieldOrder : fallbackOrder;
-  const remainingKeys = Object.keys(pole).filter((k) => !preferredKeys.includes(k));
-  const orderedKeys = [...preferredKeys, ...remainingKeys];
 
   const rows = orderedKeys
     .map((k) => {
@@ -108,19 +88,7 @@ function buildPopupHtml(pole: Record<string, any>, fieldOrder: string[] = []) {
       if (v === null || v === undefined || String(v).trim() === "") return "";
 
       const key = escapeHtml(String(k));
-      const valRaw = String(v);
-
-      if (k === "Images" && /^https?:\/\//i.test(valRaw)) {
-        const href = escapeHtml(valRaw);
-        return `<tr>
-          <td style="font-weight:600;padding:4px 6px;vertical-align:top;">${key}</td>
-          <td style="padding:4px 6px;vertical-align:top;word-break:break-word;">
-            <a href="${href}" target="_blank" rel="noreferrer">Open</a>
-          </td>
-        </tr>`;
-      }
-
-      const val = escapeHtml(valRaw);
+      const val = escapeHtml(String(v));
 
       return `<tr>
         <td style="font-weight:600;padding:4px 6px;vertical-align:top;">${key}</td>
@@ -132,7 +100,6 @@ function buildPopupHtml(pole: Record<string, any>, fieldOrder: string[] = []) {
 
   return `
     <div style="max-width:340px;">
-      <div style="font-weight:700;margin-bottom:6px;">Pole ID: ${escapeHtml(String(id))}</div>
       <div style="max-height:240px;overflow:auto;">
         <table style="width:100%;border-collapse:collapse;">
           <tbody>${rows}</tbody>
@@ -244,10 +211,12 @@ function ClusterLayer({
 
       marker.on("click", () => onSelectRef.current(p.id));
 
-      const html = buildPopupHtml(
-        p.data ?? { id: p.id, label: p.label, lat: p.lat, lng: p.lng },
-        fieldOrder
-      );
+      const html = buildPopupHtml({
+        "Pole ID": p.id,
+        "Date Tested": p.data?.["Date Tested"] ?? "",
+        "Pole Health Index(PHI)": p.data?.["Pole Health Index(PHI)"] ?? "",
+      });
+
       marker.bindPopup(html, { maxWidth: 360, autoPan: false });
 
       markerRefs.current.set(p.id, marker);
@@ -265,7 +234,7 @@ function ClusterLayer({
       markerRefs.current.clear();
       clusterGroupRef.current = null;
     };
-  }, [points, map, markerRefs, clusterGroupRef]);
+  }, [points, map, markerRefs, clusterGroupRef, fieldOrder]);
 
   return null;
 }

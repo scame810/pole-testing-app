@@ -143,22 +143,8 @@ function getServerSortColumn(sortColumn: string | null): string {
 function buildMapPopupData(row: Row): Row {
   return {
     "Pole ID": row["Pole ID"] ?? "",
-    "Latitude": row["Latitude"] ?? "",
-    "Longitude": row["Longitude"] ?? "",
     "Date Tested": row["Date Tested"] ?? "",
-    "Test Observations": row["Test Observations"] ?? "",
     "Pole Health Index(PHI)": row["Pole Health Index(PHI)"] ?? "",
-    "Foundation Health Index(FHI)": row["Foundation Health Index(FHI)"] ?? "",
-    "RSV (%)": row["RSV (%)"] ?? "",
-    "Pole Length (ft)": row["Pole Length (ft)"] ?? "",
-    "Measured Diameter (inches)": row["Measured Diameter (inches)"] ?? "",
-    "Images": row["Images"] ?? "",
-    "OHMS": row["OHMS"] ?? "",
-    "Ground Rods": row["Ground Rods"] ?? "",
-    "OHMS Rod 1": row["OHMS Rod 1"] ?? "",
-    "GW Repair": row["GW Repair"] ?? "",
-    "Guy Markers": row["Guy Markers"] ?? "",
-    "Comments": row["Comments"] ?? "",
   };
 }
 
@@ -552,32 +538,46 @@ export default function Home() {
     setMapLoading(true);
 
     try {
-      let query = supabase
-        .from("poles")
-        .select("pole_id, latitude, longitude, phi, date_tested, data, comments")
-        .eq("org_id", orgId)
-        .limit(10000);
+      const pageSize = 1000;
+      let from = 0;
+      let allRows: Row[] = [];
 
-      if (phiFilter === "lte69") query = query.lte("phi", 69);
-      if (phiFilter === "70to89") query = query.gte("phi", 70).lte("phi", 89);
-      if (phiFilter === "gte90") query = query.gte("phi", 90);
+      while (true) {
+        let query = supabase
+          .from("poles")
+          .select("pole_id, latitude, longitude, phi, date_tested, data")
+          .eq("org_id", orgId)
+          .order("pole_id", { ascending: true })
+          .range(from, from + pageSize - 1);
 
-      if (dateFrom) query = query.gte("date_tested", dateFrom);
-      if (dateTo) query = query.lte("date_tested", dateTo);
+        if (phiFilter === "lte69") query = query.lte("phi", 69);
+        if (phiFilter === "70to89") query = query.gte("phi", 70).lte("phi", 89);
+        if (phiFilter === "gte90") query = query.gte("phi", 90);
 
-      const { data, error } = await query;
+        if (dateFrom) query = query.gte("date_tested", dateFrom);
+        if (dateTo) query = query.lte("date_tested", dateTo);
 
-      if (error) throw error;
+        const { data, error } = await query;
 
-      const rows: Row[] = (data ?? []).map((r: any) => ({
-        "Pole ID": r.pole_id,
-        Latitude: r.latitude,
-        Longitude: r.longitude,
-        ...(r.data ?? {}),
-        Comments: r.comments ?? "",
-      }));
+        if (error) throw error;
+        if (!data || data.length === 0) break;
 
-      setMapRows(rows);
+        const rows: Row[] = data.map((r: any) => ({
+          "Pole ID": r.pole_id,
+          Latitude: r.latitude,
+          Longitude: r.longitude,
+          "Date Tested": r.date_tested ?? r.data?.["Date Tested"] ?? "",
+          "Pole Health Index(PHI)": r.phi ?? r.data?.["Pole Health Index(PHI)"] ?? "",
+          "Images": r.data?.["Images"] ?? "",
+        }));
+
+        allRows = [...allRows, ...rows];
+
+        if (data.length < pageSize) break;
+        from += pageSize;
+      }
+
+      setMapRows(allRows);
     } catch (e) {
       console.error("loadMapRows failed:", e);
     } finally {
