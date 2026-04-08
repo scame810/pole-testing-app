@@ -720,18 +720,52 @@ export default function Home() {
     return { count: payload.length };
   }
 
-  const exportCombinedCsv = () => {
-    if (tableRows.length === 0) return;
+  const exportCombinedCsv = async () => {
+  if (!activeOrgId) return;
 
-    const rowsWithComments = tableRows.map((row) => {
-      const id = getPoleId(row) ?? "";
-      return {
-        ...row,
-        Comments: commentsByPole[id] ?? "",
-      };
-    });
+  try {
+    const pageSize = 1000;
+    let from = 0;
+    let allRows: Row[] = [];
 
-    const ordered = rowsWithComments.map((r) => {
+    while (true) {
+      let query = supabase
+        .from("poles")
+        .select("pole_id, latitude, longitude, phi, date_tested, data, comments")
+        .eq("org_id", activeOrgId);
+
+      if (phiFilter === "lte69") query = query.lte("phi", 69);
+      if (phiFilter === "70to89") query = query.gte("phi", 70).lte("phi", 89);
+      if (phiFilter === "gte90") query = query.gte("phi", 90);
+
+      if (dateFrom) query = query.gte("date_tested", dateFrom);
+      if (dateTo) query = query.lte("date_tested", dateTo);
+
+      const sortKey = getServerSortColumn(sortColumn);
+      query = query.order(sortKey, { ascending: sortDirection === "asc" });
+
+      const { data, error } = await query.range(from, from + pageSize - 1);
+
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+
+      const rows: Row[] = data.map((r: any) => ({
+        "Pole ID": r.pole_id,
+        Latitude: r.latitude,
+        Longitude: r.longitude,
+        ...(r.data ?? {}),
+        Comments: r.comments ?? "",
+      }));
+
+      allRows = [...allRows, ...rows];
+
+      if (data.length < pageSize) break;
+      from += pageSize;
+    }
+
+    if (allRows.length === 0) return;
+
+    const ordered = allRows.map((r) => {
       const out: Record<string, any> = {};
       for (const h of tableHeaders) out[h] = (r as any)?.[h] ?? "";
       return out;
@@ -749,7 +783,10 @@ export default function Home() {
     a.remove();
 
     URL.revokeObjectURL(url);
-  };
+  } catch (e) {
+    console.error("Export failed:", e);
+  }
+};
 
   const exportSelectedCsv = () => {
     const selectedRows = tableRows.filter((row) => {
