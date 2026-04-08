@@ -36,59 +36,70 @@ export default function AppShell({
   }, []);
 
   async function loadMemberships() {
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession();
 
-    if (sessionError || !session?.user) return;
+  if (sessionError || !session?.user) return;
 
-    const userId = session.user.id;
+  const userId = session.user.id;
 
-    const { data, error } = await supabase
-      .from("memberships")
-      .select(`
-        org_id,
-        role,
-        orgs (
-          id,
-          name
-        )
-      `)
-      .eq("user_id", userId)
-      .order("created_at", { ascending: true });
+  const { data: membershipData, error: membershipError } = await supabase
+    .from("memberships")
+    .select("org_id, role")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true });
 
-    console.log("membership query rows", data);
+  if (membershipError || !membershipData) {
+    console.error("Failed to load memberships:", membershipError);
+    return;
+  }
 
-    if (error || !data) {
-      console.error("Failed to load memberships:", error);
-      return;
-    }
+  const orgIds = membershipData.map((row) => row.org_id);
 
-    const rows: MembershipRow[] = (data || []).map((row: any) => ({
-      org_id: row.org_id,
-      role: row.role,
-      org_name: row.orgs?.[0]?.name ?? null,
-    }));
+  let orgNameMap: Record<string, string> = {};
 
-    setMemberships(rows);
+  if (orgIds.length > 0) {
+    const { data: orgData, error: orgError } = await supabase
+      .from("orgs")
+      .select("id, name")
+      .in("id", orgIds);
 
-    const savedOrgId = window.localStorage.getItem("selectedOrgId");
-
-    const savedStillExists = rows.some((row) => row.org_id === savedOrgId);
-
-    if (savedOrgId && savedStillExists) {
-      setSelectedOrgId(savedOrgId);
-      return;
-    }
-
-    if (rows.length > 0) {
-      const fallbackOrgId = rows[0].org_id;
-      setSelectedOrgId(fallbackOrgId);
-      window.localStorage.setItem("selectedOrgId", fallbackOrgId);
-      window.dispatchEvent(new Event("selected-org-changed"));
+    if (orgError) {
+      console.error("Failed to load org names:", orgError);
+    } else {
+      orgNameMap = Object.fromEntries(
+        (orgData || []).map((org) => [org.id, org.name || ""])
+      );
     }
   }
+
+  const rows: MembershipRow[] = membershipData.map((row) => ({
+    org_id: row.org_id,
+    role: row.role,
+    org_name: orgNameMap[row.org_id] || null,
+  }));
+
+  console.log("memberships rows", rows);
+
+  setMemberships(rows);
+
+  const savedOrgId = window.localStorage.getItem("selectedOrgId");
+  const savedStillExists = rows.some((row) => row.org_id === savedOrgId);
+
+  if (savedOrgId && savedStillExists) {
+    setSelectedOrgId(savedOrgId);
+    return;
+  }
+
+  if (rows.length > 0) {
+    const fallbackOrgId = rows[0].org_id;
+    setSelectedOrgId(fallbackOrgId);
+    window.localStorage.setItem("selectedOrgId", fallbackOrgId);
+    window.dispatchEvent(new Event("selected-org-changed"));
+  }
+}
 
   function handleOrgChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const newOrgId = e.target.value;
