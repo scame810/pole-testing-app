@@ -58,6 +58,8 @@ export default function AppShell({
       .eq("user_id", userId)
       .order("created_at", { ascending: true });
 
+    console.log("membership query rows", data);
+
     if (error || !data) {
       console.error("Failed to load memberships:", error);
       return;
