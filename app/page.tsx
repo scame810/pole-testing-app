@@ -5,7 +5,6 @@ import Papa from "papaparse";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { inviteMember } from "@/app/actions/inviteMember";
-import AppShell from "./components/AppShell";
 import { createSupabaseBrowserClient } from "@/lib/supabaseBrowser";
 
 const PoleMap = dynamic(() => import("./components/PoleMap"), { ssr: false });
@@ -177,6 +176,7 @@ export default function Home() {
   const [lastRefresh, setLastRefresh] = useState<string>("");
   const [mapRows, setMapRows] = useState<Row[]>([]);
   const [mapLoading, setMapLoading] = useState(false);
+  const [showMap, setShowMap] = useState(false);
   const [dateTo, setDateTo] = useState("");
   const [showImportSummary, setShowImportSummary] = useState(false);
   const [importSummaryData, setImportSummaryData] = useState<{
@@ -184,6 +184,7 @@ export default function Home() {
     lines: string[];
   } | null>(null);
   const saveTimersRef = useRef<Record<string, any>>({});
+  const lastLoadedOrgRef = useRef<string | null>(null);
 
   const isOwner = activeRole === "owner";
   const isMember = activeRole === "member";
@@ -638,6 +639,12 @@ export default function Home() {
           return;
         }
 
+        if (lastLoadedOrgRef.current === orgId) {
+          return;
+        }
+
+        lastLoadedOrgRef.current = orgId;
+
         const owners = await loadOwnerOrgs();
         setOwnerOrgs(owners);
 
@@ -667,8 +674,8 @@ export default function Home() {
 
     initializeDashboard();
 
-    async function handleSelectedOrgChanged() {
-      await initializeDashboard();
+    function handleSelectedOrgChanged() {
+      initializeDashboard();
     }
 
     window.addEventListener("selected-org-changed", handleSelectedOrgChanged);
@@ -960,6 +967,18 @@ export default function Home() {
     loadMapRows(activeOrgId);
   }, [activeOrgId, phiFilter, dateFrom, dateTo]);
 
+  useEffect(() => {
+  setShowMap(false);
+
+  if (mapLoading || filteredPoints.length === 0) return;
+
+  const t = setTimeout(() => {
+    setShowMap(true);
+  }, 350);
+
+  return () => clearTimeout(t);
+}, [mapLoading, filteredPoints.length, activeOrgId]);
+
   const tableHeaders = useMemo(() => {
     if (tableRows.length === 0) return [];
 
@@ -1170,7 +1189,7 @@ export default function Home() {
   });
 
   return (
-  <AppShell>
+    <>
     <div className="min-h-screen bg-gray-100 p-3 sm:p-4 md:p-6 lg:p-8">
       <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
@@ -1346,11 +1365,14 @@ export default function Home() {
 
           <button
             type="button"
-            onClick={() => setZoomToAllTrigger((n) => n + 1)}
+            onClick={() => {
+              setSelectedPoleId(null);
+              setZoomToAllTrigger((n) => n + 1);
+            }}
             className="rounded-md bg-[#094929] px-4 py-2 text-sm text-white hover:bg-[#0c5a33]"
           >
             Zoom Out to All Poles
-          </button>
+          </button>/
 
           <button
             type="button"
@@ -1391,6 +1413,10 @@ export default function Home() {
             <p className="text-sm text-gray-600">
               No map points match your search, or your CSV is missing valid Latitude and Longitude columns.
             </p>
+          ) : !showMap ? (
+            <div className="w-full h-[280px] sm:h-[340px] md:h-[420px] lg:h-[500px] border border-gray-200 rounded-lg overflow-hidden flex items-center justify-center text-sm text-gray-600">
+              Preparing map...
+            </div>
           ) : (
             <div className="w-full h-[280px] sm:h-[340px] md:h-[420px] lg:h-[500px] border border-gray-200 rounded-lg overflow-hidden">
               <PoleMap
@@ -1400,7 +1426,7 @@ export default function Home() {
                   setSelectedPoleId(id);
                   await goToPoleInTable(id);
                 }}
-                zoomToAllTrigger={zoomToAllTrigger}
+                resetViewTrigger={zoomToAllTrigger}
               />
             </div>
           )}
@@ -1732,6 +1758,6 @@ export default function Home() {
           </div>
         </div>
       )}
-    </AppShell>
+    </>
   );
 }
