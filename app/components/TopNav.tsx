@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 const linkStyle = {
   color: "#094929",
@@ -12,6 +13,20 @@ const linkStyle = {
 };
 
 export default function TopNav() {
+  const pathname = usePathname();
+
+  const hideOnRoutes = [
+    "/login",
+    "/accept-invite",
+    "/update-password",
+  ];
+
+  const shouldHide =
+    hideOnRoutes.some((route) => pathname.startsWith(route)) ||
+    pathname.startsWith("/auth/callback");
+
+  if (shouldHide) return null;
+
   return (
     <div
       style={{
