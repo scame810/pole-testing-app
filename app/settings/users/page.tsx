@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import UsersTable from "./users-table";
 import { createServerSupabaseClient } from "../../../lib/supabaseServer";
 import InviteForm from "./invite-form";
-import AppShell from "../../components/AppShell";
 
 export default async function UsersPage() {
   const supabase = await createServerSupabaseClient();
@@ -42,7 +41,7 @@ export default async function UsersPage() {
   }
 
   return (
-    <AppShell>
+    <>
       <div style={{ padding: 16, maxWidth: 900 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 12 }}>
           User Management
@@ -57,7 +56,7 @@ export default async function UsersPage() {
           myRole={membership.role}
         />
       </div>
-    </AppShell>
+    </>
   );
 
 }

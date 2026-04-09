@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Papa from "papaparse";
 import { createSupabaseBrowserClient } from "@/lib/supabaseBrowser";
-import AppShell from "../components/AppShell";
 import MaintenancePolesTable from "./components/MaintenancePolesTable";
 
 type CsvRow = Record<string, any>;
@@ -497,7 +496,7 @@ export default function ReportsPage() {
     rowsPerPage === "all" ? totalRows : Math.min(currentPage * rowsPerPage, totalRows);
 
   return (
-    <AppShell>
+    <>
       <div className="space-y-6">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
@@ -691,6 +690,6 @@ export default function ReportsPage() {
           </section>
         )}
       </div>
-    </AppShell>
+    </>
   );
 }
