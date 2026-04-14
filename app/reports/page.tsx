@@ -118,27 +118,6 @@ export default function ReportsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState<number | "all">(10);
 
-  // Top Pole Assemblies state
-  const [topPoleAssemblyRows, setTopPoleAssemblyRows] = useState<MaintenancePoleRow[]>([]);
-  const [topTotalRows, setTopTotalRows] = useState(0);
-  const [topPoleAssembliesMessage, setTopPoleAssembliesMessage] = useState("");
-  const [topPoleAssembliesUploading, setTopPoleAssembliesUploading] = useState(false);
-
-  const [selectedTopPoleId, setSelectedTopPoleId] = useState<string | null>(null);
-  const [selectedTopPoleIds, setSelectedTopPoleIds] = useState<Record<string, boolean>>({});
-  const [topCommentsByPole, setTopCommentsByPole] = useState<Record<string, string>>({});
-  const [topCommentSaveStatus, setTopCommentSaveStatus] = useState<
-    Record<string, "idle" | "saving" | "saved" | "error">
-  >({});
-
-  const [topSortColumn, setTopSortColumn] = useState<SortColumn>(null);
-  const [topSortDirection, setTopSortDirection] = useState<"asc" | "desc">("asc");
-  const [topPhiFilter, setTopPhiFilter] = useState<"all" | "lte69" | "70to89" | "gte90">("all");
-  const [topDateFrom, setTopDateFrom] = useState("");
-  const [topDateTo, setTopDateTo] = useState("");
-  const [topCurrentPage, setTopCurrentPage] = useState(1);
-  const [topRowsPerPage, setTopRowsPerPage] = useState<number | "all">(10);
-
   useEffect(() => {
     initialize();
 
@@ -158,32 +137,13 @@ export default function ReportsPage() {
   }, [phiFilter, dateFrom, dateTo, sortColumn, sortDirection, rowsPerPage]);
 
   useEffect(() => {
-    setTopCurrentPage(1);
-  }, [topPhiFilter, topDateFrom, topDateTo, topSortColumn, topSortDirection, topRowsPerPage]);
-
-  useEffect(() => {
     if (!orgId) return;
     loadMaintenanceRows(orgId);
   }, [orgId, currentPage, rowsPerPage, sortColumn, sortDirection, phiFilter, dateFrom, dateTo]);
 
-  useEffect(() => {
-    if (!orgId) return;
-    loadTopPoleAssemblyRows(orgId);
-  }, [
-    orgId,
-    topCurrentPage,
-    topRowsPerPage,
-    topSortColumn,
-    topSortDirection,
-    topPhiFilter,
-    topDateFrom,
-    topDateTo,
-  ]);
-
   async function initialize() {
     setLoading(true);
     setMessage("");
-    setTopPoleAssembliesMessage("");
 
     const {
       data: { session },
@@ -276,51 +236,6 @@ export default function ReportsPage() {
       nextComments[key] = row.comments ?? "";
     }
     setCommentsByPole((prev) => ({ ...prev, ...nextComments }));
-  }
-
-  async function loadTopPoleAssemblyRows(currentOrgId: string) {
-    const from = topRowsPerPage === "all" ? 0 : (topCurrentPage - 1) * topRowsPerPage;
-    const to = topRowsPerPage === "all" ? 99999 : from + topRowsPerPage - 1;
-
-    let query = supabase
-      .from("top_pole_assemblies")
-      .select("*", { count: "exact" })
-      .eq("org_id", currentOrgId);
-
-    if (topPhiFilter === "lte69") query = query.lte("phi", 69);
-    if (topPhiFilter === "70to89") query = query.gte("phi", 70).lte("phi", 89);
-    if (topPhiFilter === "gte90") query = query.gte("phi", 90);
-
-    if (topDateFrom) query = query.gte("date_tested", topDateFrom);
-    if (topDateTo) query = query.lte("date_tested", topDateTo);
-
-    query = query.order(getServerSortColumn(topSortColumn), {
-      ascending: topSortDirection === "asc",
-      nullsFirst: false,
-    });
-
-    if (topRowsPerPage !== "all") {
-      query = query.range(from, to);
-    }
-
-    const { data, error, count } = await query;
-
-    if (error) {
-      setTopPoleAssembliesMessage(`Could not load top pole assemblies: ${error.message}`);
-      return;
-    }
-
-    const rows = (data || []) as MaintenancePoleRow[];
-    setTopPoleAssemblyRows(rows);
-    setTopTotalRows(count ?? 0);
-
-    const nextComments: Record<string, string> = {};
-    for (const row of rows) {
-      const key = row.pole_id ?? "";
-      if (!key) continue;
-      nextComments[key] = row.comments ?? "";
-    }
-    setTopCommentsByPole((prev) => ({ ...prev, ...nextComments }));
   }
 
   async function handleMaintenanceCsvUpload(
@@ -421,104 +336,6 @@ export default function ReportsPage() {
     });
   }
 
-  async function handleTopPoleAssembliesCsvUpload(
-    e: React.ChangeEvent<HTMLInputElement>
-  ) {
-    const file = e.target.files?.[0];
-    if (!file || !orgId) return;
-
-    if (!canUpload) {
-      setTopPoleAssembliesMessage("Only the owner can upload top pole assembly CSVs.");
-      e.target.value = "";
-      return;
-    }
-
-    setTopPoleAssembliesUploading(true);
-    setTopPoleAssembliesMessage("");
-
-    Papa.parse<CsvRow>(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async (results) => {
-        try {
-          const parsedRows = results.data || [];
-
-          const payload = parsedRows.map((row) => {
-            const poleId =
-              row["Pole ID"] ??
-              row["PoleID"] ??
-              row["Pole Id"] ??
-              row["pole id"] ??
-              row["pole_id"] ??
-              null;
-
-            const latitudeValue =
-              row["Latitude"] ??
-              row["Lat"] ??
-              row["latitude"] ??
-              row["lat"] ??
-              null;
-
-            const longitudeValue =
-              row["Longitude"] ??
-              row["Lng"] ??
-              row["Long"] ??
-              row["longitude"] ??
-              row["lng"] ??
-              row["long"] ??
-              null;
-
-            const dateTested = getDateTestedValue(row);
-            const phi = getPhiValue(row);
-
-            return {
-              org_id: orgId,
-              pole_id: poleId ? String(poleId).trim() : null,
-              latitude: toNumberOrNull(latitudeValue),
-              longitude: toNumberOrNull(longitudeValue),
-              comments:
-                row["Comments"] !== undefined && row["Comments"] !== null
-                  ? String(row["Comments"])
-                  : null,
-              raw_data: row,
-              date_tested: dateTested,
-              phi,
-            };
-          });
-
-          const cleanedPayload = payload.filter(
-            (row) => row.pole_id || row.latitude !== null || row.longitude !== null
-          );
-
-          if (cleanedPayload.length > 0) {
-            const { error: upsertError } = await supabase
-              .from("top_pole_assemblies")
-              .upsert(cleanedPayload, { onConflict: "org_id,pole_id" });
-
-            if (upsertError) {
-              setTopPoleAssembliesMessage(`Upload failed: ${upsertError.message}`);
-              setTopPoleAssembliesUploading(false);
-              return;
-            }
-          }
-
-          await loadTopPoleAssemblyRows(orgId);
-          setTopPoleAssembliesMessage(`Uploaded ${cleanedPayload.length} top pole assembly rows.`);
-        } catch (err: any) {
-          setTopPoleAssembliesMessage(err?.message || "Upload failed.");
-        } finally {
-          setTopPoleAssembliesUploading(false);
-          e.target.value = "";
-        }
-      },
-      error: (err) => {
-        setTopPoleAssembliesMessage(`CSV parse failed: ${err.message}`);
-        setTopPoleAssembliesUploading(false);
-        e.target.value = "";
-      },
-    });
-  }
-
   function saveCommentToSupabase(poleId: string, comment: string) {
     if (!orgId) return;
 
@@ -555,46 +372,6 @@ export default function ReportsPage() {
       } catch (e) {
         console.error("Save comment failed:", e);
         setCommentSaveStatus((prev) => ({ ...prev, [poleId]: "error" }));
-      }
-    }, 500);
-  }
-
-  function saveTopCommentToSupabase(poleId: string, comment: string) {
-    if (!orgId) return;
-
-    if (saveTimersRef.current[`top-${poleId}`]) {
-      clearTimeout(saveTimersRef.current[`top-${poleId}`]);
-    }
-
-    setTopCommentSaveStatus((prev) => ({ ...prev, [poleId]: "saving" }));
-
-    saveTimersRef.current[`top-${poleId}`] = setTimeout(async () => {
-      try {
-        const { error } = await supabase
-          .from("top_pole_assemblies")
-          .update({ comments: comment })
-          .eq("org_id", orgId)
-          .eq("pole_id", poleId);
-
-        if (error) throw error;
-
-        setTopCommentSaveStatus((prev) => ({ ...prev, [poleId]: "saved" }));
-
-        setTopPoleAssemblyRows((prev) =>
-          prev.map((row) =>
-            row.pole_id === poleId ? { ...row, comments: comment } : row
-          )
-        );
-
-        setTimeout(() => {
-          setTopCommentSaveStatus((prev) => ({
-            ...prev,
-            [poleId]: prev[poleId] === "saved" ? "idle" : prev[poleId],
-          }));
-        }, 1500);
-      } catch (e) {
-        console.error("Save top assembly comment failed:", e);
-        setTopCommentSaveStatus((prev) => ({ ...prev, [poleId]: "error" }));
       }
     }, 500);
   }
@@ -683,39 +460,11 @@ export default function ReportsPage() {
     return (data || []) as MaintenancePoleRow[];
   }
 
-  async function fetchAllFilteredTopPoleAssemblyRows(currentOrgId: string) {
-    let query = supabase
-      .from("top_pole_assemblies")
-      .select("*")
-      .eq("org_id", currentOrgId);
-
-    if (topPhiFilter === "lte69") query = query.lte("phi", 69);
-    if (topPhiFilter === "70to89") query = query.gte("phi", 70).lte("phi", 89);
-    if (topPhiFilter === "gte90") query = query.gte("phi", 90);
-
-    if (topDateFrom) query = query.gte("date_tested", topDateFrom);
-    if (topDateTo) query = query.lte("date_tested", topDateTo);
-
-    query = query.order(getServerSortColumn(topSortColumn), {
-      ascending: topSortDirection === "asc",
-      nullsFirst: false,
-    });
-
-    const { data, error } = await query;
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    return (data || []) as MaintenancePoleRow[];
-  }
-
   const totalRows = maintenanceTotalRows;
   const totalPages =
     rowsPerPage === "all" ? 1 : Math.max(1, Math.ceil(totalRows / rowsPerPage));
 
   const selectedCount = Object.values(selectedPoleIds).filter(Boolean).length;
-  const topSelectedCount = Object.values(selectedTopPoleIds).filter(Boolean).length;
 
   const allCurrentPageSelected =
     maintenanceRows.length > 0 &&
@@ -729,28 +478,6 @@ export default function ReportsPage() {
 
   const endRow =
     rowsPerPage === "all" ? totalRows : Math.min(currentPage * rowsPerPage, totalRows);
-
-  const topTotalPages =
-    topRowsPerPage === "all" ? 1 : Math.max(1, Math.ceil(topTotalRows / topRowsPerPage));
-
-  const allTopCurrentPageSelected =
-    topPoleAssemblyRows.length > 0 &&
-    topPoleAssemblyRows.every((row) => {
-      const id = row.pole_id ?? "";
-      return !!selectedTopPoleIds[id];
-    });
-
-  const topStartRow =
-    topTotalRows === 0
-      ? 0
-      : topRowsPerPage === "all"
-      ? 1
-      : (topCurrentPage - 1) * topRowsPerPage + 1;
-
-  const topEndRow =
-    topRowsPerPage === "all"
-      ? topTotalRows
-      : Math.min(topCurrentPage * topRowsPerPage, topTotalRows);
 
   return (
     <div className="space-y-6">
@@ -961,210 +688,6 @@ export default function ReportsPage() {
                 } else {
                   setSortColumn(column);
                   setSortDirection("asc");
-                }
-              }}
-            />
-          </section>
-
-          <section className="rounded-xl border p-4 space-y-4 bg-white">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-semibold">Top Pole Assemblies</h2>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <button
-                  className="bg-[#094929] text-white px-4 py-2 rounded-lg hover:bg-[#0c5a33] disabled:opacity-50"
-                  onClick={async () => {
-                    if (!orgId) return;
-
-                    try {
-                      const allFilteredRows = await fetchAllFilteredTopPoleAssemblyRows(orgId);
-                      const rows = allFilteredRows.filter(
-                        (row) => !!selectedTopPoleIds[row.pole_id ?? ""]
-                      );
-                      if (rows.length === 0) return;
-
-                      exportRowsToCsv(
-                        rows,
-                        `selected-top-pole-assemblies-${new Date().toISOString().slice(0, 10)}.csv`,
-                        topCommentsByPole
-                      );
-                    } catch (err: any) {
-                      setTopPoleAssembliesMessage(err?.message || "Export failed.");
-                    }
-                  }}
-                  type="button"
-                  disabled={topSelectedCount === 0}
-                >
-                  Export Selected ({topSelectedCount})
-                </button>
-
-                <button
-                  className="bg-[#094929] text-white px-4 py-2 rounded-lg hover:bg-[#0c5a33] disabled:opacity-50"
-                  onClick={async () => {
-                    if (!orgId) return;
-
-                    try {
-                      const rows = await fetchAllFilteredTopPoleAssemblyRows(orgId);
-                      exportRowsToCsv(
-                        rows,
-                        `top-pole-assemblies-${new Date().toISOString().slice(0, 10)}.csv`,
-                        topCommentsByPole
-                      );
-                    } catch (err: any) {
-                      setTopPoleAssembliesMessage(err?.message || "Export failed.");
-                    }
-                  }}
-                  type="button"
-                  disabled={topTotalRows === 0}
-                >
-                  Export CSV
-                </button>
-
-                {canUpload && (
-                  <label className="inline-flex cursor-pointer items-center rounded-md border px-4 py-2 text-sm font-medium hover:bg-gray-50">
-                    {topPoleAssembliesUploading ? "Uploading..." : "Upload CSV"}
-                    <input
-                      type="file"
-                      accept=".csv"
-                      className="hidden"
-                      onChange={handleTopPoleAssembliesCsvUpload}
-                      disabled={topPoleAssembliesUploading}
-                    />
-                  </label>
-                )}
-              </div>
-            </div>
-
-            {topPoleAssembliesMessage && (
-              <div className="rounded-md bg-gray-50 px-3 py-2 text-sm">
-                {topPoleAssembliesMessage}
-              </div>
-            )}
-
-            <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <select
-                  value={topPhiFilter}
-                  onChange={(e) =>
-                    setTopPhiFilter(e.target.value as "all" | "lte69" | "70to89" | "gte90")
-                  }
-                  className="rounded-md border px-3 py-2 text-sm"
-                >
-                  <option value="all">All PHI</option>
-                  <option value="lte69">PHI ≤ 69</option>
-                  <option value="70to89">PHI 70–89</option>
-                  <option value="gte90">PHI ≥ 90</option>
-                </select>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">From</span>
-                  <input
-                    type="date"
-                    value={topDateFrom}
-                    onChange={(e) => setTopDateFrom(e.target.value)}
-                    className="rounded-md border px-3 py-2 text-sm"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">To</span>
-                  <input
-                    type="date"
-                    value={topDateTo}
-                    onChange={(e) => setTopDateTo(e.target.value)}
-                    className="rounded-md border px-3 py-2 text-sm"
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTopPhiFilter("all");
-                    setTopDateFrom("");
-                    setTopDateTo("");
-                  }}
-                  className="rounded-md bg-gray-100 px-4 py-2 text-sm hover:bg-gray-200"
-                >
-                  Clear Filters
-                </button>
-              </div>
-
-              <div className="text-sm text-gray-500">
-                Filtered results: {topTotalRows}
-              </div>
-            </div>
-
-            <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
-                <span>
-                  Showing {topStartRow} to {topEndRow} of {topTotalRows} rows
-                </span>
-
-                <select
-                  value={topRowsPerPage}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setTopRowsPerPage(value === "all" ? "all" : Number(value));
-                  }}
-                  className="rounded-md border px-2 py-1 text-sm"
-                >
-                  <option value={10}>10</option>
-                  <option value={25}>25</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                  <option value="all">All</option>
-                </select>
-
-                <span>rows per page</span>
-              </div>
-
-              {topRowsPerPage !== "all" && (
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setTopCurrentPage((p) => Math.max(1, p - 1))}
-                    disabled={topCurrentPage === 1}
-                    className="rounded border px-3 py-2 text-sm disabled:opacity-50"
-                  >
-                    ‹
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setTopCurrentPage((p) => Math.min(topTotalPages, p + 1))}
-                    disabled={topCurrentPage === topTotalPages}
-                    className="rounded border px-3 py-2 text-sm disabled:opacity-50"
-                  >
-                    ›
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <MaintenancePolesTable
-              rows={topPoleAssemblyRows}
-              selectedPoleId={selectedTopPoleId}
-              onSelectPole={setSelectedTopPoleId}
-              selectedPoleIds={selectedTopPoleIds}
-              setSelectedPoleIds={setSelectedTopPoleIds}
-              allCurrentPageSelected={allTopCurrentPageSelected}
-              commentsByPole={topCommentsByPole}
-              commentSaveStatus={topCommentSaveStatus}
-              canEditComments={canEditComments}
-              onCommentChange={(poleId, next) => {
-                setTopCommentsByPole((prev) => ({ ...prev, [poleId]: next }));
-                saveTopCommentToSupabase(poleId, next);
-              }}
-              sortColumn={topSortColumn}
-              sortDirection={topSortDirection}
-              onSort={(column) => {
-                if (topSortColumn === column) {
-                  setTopSortDirection(topSortDirection === "asc" ? "desc" : "asc");
-                } else {
-                  setTopSortColumn(column);
-                  setTopSortDirection("asc");
                 }
               }}
             />

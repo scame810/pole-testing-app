@@ -987,6 +987,7 @@ export default function Home() {
       "Latitude",
       "Longitude",
       "Date Tested",
+      "Status",
       "Test Observations",
       "Pole Health Index(PHI)",
       "Foundation Health Index(FHI)",
@@ -1642,6 +1643,10 @@ export default function Home() {
                         "cursor-pointer transition-colors " +
                         (poleId === selectedPoleId
                           ? "bg-yellow-100 ring-2 ring-inset ring-yellow-400"
+                          : String(row?.["Status"] ?? "").trim() === "Maintenance needed"
+                          ? "bg-red-50"
+                          : String(row?.["Status"] ?? "").trim() === "No maintenance needed"
+                          ? "bg-green-50"
                           : idx % 2 === 0
                           ? "bg-white"
                           : "bg-gray-50")
@@ -1665,65 +1670,85 @@ export default function Home() {
                       {tableHeaders.map((h) => {
                         const raw = row?.[h];
 
-                        if (h === "Comments") {
-                          const val = commentsByPole[poleId] ?? "";
-                          const saveState = commentSaveStatus[poleId] ?? "idle";
+                        if (h === "Status") {
+                          const value = String(raw ?? "").trim();
 
                           return (
-                            <td key={h} className="border p-2 align-top min-w-[220px]">
-                              <div className="mb-1 text-xs">
-                                {saveState === "saving" && (
-                                  <span className="text-amber-600 font-medium">Saving...</span>
-                                )}
-                                {saveState === "saved" && (
-                                  <span className="text-[#094929] font-medium">Saved</span>
-                                )}
-                                {saveState === "error" && (
-                                  <span className="text-red-600 font-medium">Save failed</span>
-                                )}
-                              </div>
-
-                              {canEditComments ? (
-                                <textarea
-                                  value={val}
-                                  onChange={(e) => {
-                                    const next = e.target.value;
-                                    setCommentsByPole((prev) => ({ ...prev, [poleId]: next }));
-                                    if (poleId) saveCommentToSupabase(poleId, next);
-                                  }}
-                                  placeholder="Add notes..."
-                                  className="w-full min-h-[60px] p-2 border rounded-md text-sm"
-                                />
-                              ) : (
-                                <div className="w-full min-h-[60px] p-2 border rounded-md text-sm bg-gray-50 whitespace-pre-wrap">
-                                  {val || ""}
-                                </div>
-                              )}
+                            <td
+                              key={h}
+                              className={
+                                "border p-2 align-top font-semibold " +
+                                (value === "Maintenance needed"
+                                  ? "text-red-700"
+                                  : value === "No maintenance needed"
+                                  ? "text-green-700"
+                                  : "text-gray-700")
+                              }
+                            >
+                              {value}
                             </td>
                           );
                         }
 
-                        const value = String(raw ?? "").trim();
-                        const isUrl = looksLikeUrl(value);
-                        const href = isUrl ? normalizeUrl(value) : "";
+                        if (h === "Comments") {
+                          const val = commentsByPole[poleId] ?? "";
+                          const saveState = commentSaveStatus[poleId] ?? "idle";
 
                         return (
-                          <td key={h} className="border p-2 align-top">
-                            {h === "Images" && isUrl ? (
-                              <a
-                                href={href}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-600 underline"
-                              >
-                                Open Photos
-                              </a>
+                          <td key={h} className="border p-2 align-top min-w-[220px]">
+                            <div className="mb-1 text-xs">
+                              {saveState === "saving" && (
+                                <span className="text-amber-600 font-medium">Saving...</span>
+                              )}
+                              {saveState === "saved" && (
+                                <span className="text-[#094929] font-medium">Saved</span>
+                              )}
+                              {saveState === "error" && (
+                                <span className="text-red-600 font-medium">Save failed</span>
+                              )}
+                            </div>
+
+                            {canEditComments ? (
+                              <textarea
+                                value={val}
+                                onChange={(e) => {
+                                  const next = e.target.value;
+                                  setCommentsByPole((prev) => ({ ...prev, [poleId]: next }));
+                                  if (poleId) saveCommentToSupabase(poleId, next);
+                                }}
+                                placeholder="Add notes..."
+                                className="w-full min-h-[60px] p-2 border rounded-md text-sm"
+                              />
                             ) : (
-                              value
+                              <div className="w-full min-h-[60px] p-2 border rounded-md text-sm bg-gray-50 whitespace-pre-wrap">
+                                {val || ""}
+                              </div>
                             )}
                           </td>
                         );
-                      })}
+                      }
+
+                      const value = String(raw ?? "").trim();
+                      const isUrl = looksLikeUrl(value);
+                      const href = isUrl ? normalizeUrl(value) : "";
+
+                      return (
+                        <td key={h} className="border p-2 align-top">
+                          {h === "Images" && isUrl ? (
+                            <a
+                              href={href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 underline"
+                            >
+                              Open Photos
+                            </a>
+                          ) : (
+                            value
+                          )}
+                        </td>
+                      );
+                    })}
                     </tr>
                   );
                 })}
