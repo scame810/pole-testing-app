@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { createSupabaseBrowserClient } from "../../lib/supabaseBrowser";
 
 const linkStyle = {
   color: "#094929",
@@ -14,6 +15,8 @@ const linkStyle = {
 
 export default function TopNav() {
   const pathname = usePathname();
+  const router = useRouter();
+  const supabase = createSupabaseBrowserClient();
 
   const hideOnRoutes = [
     "/login",
@@ -27,6 +30,12 @@ export default function TopNav() {
 
   if (shouldHide) return null;
 
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  };
+
   return (
     <div
       style={{
@@ -35,22 +44,43 @@ export default function TopNav() {
         borderBottom: "1px solid #cce3d4",
       }}
     >
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        <Link href="/" style={linkStyle}>
-          Dashboard
-        </Link>
+      <div
+        style={{
+          display: "flex",
+          gap: 12,
+          flexWrap: "wrap",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <Link href="/" style={linkStyle}>
+            Dashboard
+          </Link>
 
-        <Link href="/reports" style={linkStyle}>
-          Reports
-        </Link>
+          <Link href="/reports" style={linkStyle}>
+            Reports
+          </Link>
 
-        <Link href="/settings/users" style={linkStyle}>
-          Users
-        </Link>
+          <Link href="/settings/users" style={linkStyle}>
+            Users
+          </Link>
 
-        <Link href="/settings" style={linkStyle}>
-          Settings
-        </Link>
+          <Link href="/settings" style={linkStyle}>
+            Settings
+          </Link>
+        </div>
+
+        <button
+          onClick={handleSignOut}
+          style={{
+            ...linkStyle,
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          Sign Out
+        </button>
       </div>
     </div>
   );
