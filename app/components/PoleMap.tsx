@@ -3,6 +3,7 @@
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import { useEffect, useMemo, useRef, useState } from "react";
+import MarkerClusterGroup from "react-leaflet-cluster";
 
 export type PolePoint = {
   id: string;
@@ -132,56 +133,65 @@ export default function PoleMap({
         <ResetViewController resetViewTrigger={resetViewTrigger} />
         <SelectedController selected={selected} markerRefs={markerRefs} />
 
-        {points.map((p) => (
-          <Marker
-            key={p.id}
-            position={[p.lat, p.lng]}
-            icon={makeColorIcon(getMarkerColor(p.data))}
-            ref={(marker) => {
-              if (marker) {
-                markerRefs.current.set(p.id, marker);
-              } else {
-                markerRefs.current.delete(p.id);
-              }
-            }}
-            eventHandlers={{
-              click: () => onSelect(p.id),
-            }}
-          >
-            <Popup autoPan={false} maxWidth={360}>
-              <div style={{ maxWidth: 340 }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <tbody>
-                    <tr>
-                      <td style={{ fontWeight: 600, padding: "4px 6px", verticalAlign: "top" }}>
-                        Pole ID
-                      </td>
-                      <td style={{ padding: "4px 6px", verticalAlign: "top" }}>
-                        {p.id}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td style={{ fontWeight: 600, padding: "4px 6px", verticalAlign: "top" }}>
-                        Date Tested
-                      </td>
-                      <td style={{ padding: "4px 6px", verticalAlign: "top" }}>
-                        {String(p.data?.["Date Tested"] ?? "")}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td style={{ fontWeight: 600, padding: "4px 6px", verticalAlign: "top" }}>
-                        Pole Health Index(PHI)
-                      </td>
-                      <td style={{ padding: "4px 6px", verticalAlign: "top" }}>
-                        {String(p.data?.["Pole Health Index(PHI)"] ?? "")}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+        <MarkerClusterGroup
+          chunkedLoading
+          maxClusterRadius={18}
+          disableClusteringAtZoom={16}
+          spiderfyOnMaxZoom
+          showCoverageOnHover={false}
+          zoomToBoundsOnClick
+        >
+          {points.map((p) => (
+            <Marker
+              key={p.id}
+              position={[p.lat, p.lng]}
+              icon={makeColorIcon(getMarkerColor(p.data))}
+              ref={(marker) => {
+                if (marker) {
+                  markerRefs.current.set(p.id, marker);
+                } else {
+                  markerRefs.current.delete(p.id);
+                }
+              }}
+              eventHandlers={{
+                click: () => onSelect(p.id),
+              }}
+            >
+              <Popup autoPan={false} maxWidth={360}>
+                <div style={{ maxWidth: 340 }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <tbody>
+                      <tr>
+                        <td style={{ fontWeight: 600, padding: "4px 6px" }}>
+                          Pole ID
+                        </td>
+                        <td style={{ padding: "4px 6px" }}>
+                          {p.id}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style={{ fontWeight: 600, padding: "4px 6px" }}>
+                          Date Tested
+                        </td>
+                        <td style={{ padding: "4px 6px" }}>
+                          {String(p.data?.["Date Tested"] ?? "")}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style={{ fontWeight: 600, padding: "4px 6px" }}>
+                          Pole Health Index(PHI)
+                        </td>
+                        <td style={{ padding: "4px 6px" }}>
+                          {String(p.data?.["Pole Health Index(PHI)"] ?? "")}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+        </MarkerClusterGroup>
       </MapContainer>
     </div>
   );
