@@ -523,7 +523,20 @@ export default function Home() {
       });
 
       setCommentsByPole((prev) => ({ ...prev, ...nextComments }));
-      setTableRows(rows);
+      let finalRows = rows;
+
+      if (sortColumn === "Status") {
+        finalRows = [...rows].sort((a, b) => {
+          const aVal = String(a["Status"] ?? "").toLowerCase();
+          const bVal = String(b["Status"] ?? "").toLowerCase();
+
+          if (aVal < bVal) return sortDirection === "asc" ? -1 : 1;
+          if (aVal > bVal) return sortDirection === "asc" ? 1 : -1;
+          return 0;
+        });
+      }
+
+      setTableRows(finalRows);
       setTableTotalRows(count ?? rows.length);
         } catch (e) {
           console.error("loadTablePage failed:", e);
@@ -1643,10 +1656,8 @@ export default function Home() {
                         "cursor-pointer transition-colors " +
                         (poleId === selectedPoleId
                           ? "bg-yellow-100 ring-2 ring-inset ring-yellow-400"
-                          : String(row?.["Status"] ?? "").trim() === "Maintenance needed"
+                          :String(row?.["Status"] ?? "").trim() === "Maintenance needed"
                           ? "bg-red-50"
-                          : String(row?.["Status"] ?? "").trim() === "No maintenance needed"
-                          ? "bg-green-50"
                           : idx % 2 === 0
                           ? "bg-white"
                           : "bg-gray-50")
@@ -1680,8 +1691,6 @@ export default function Home() {
                                 "border p-2 align-top font-semibold " +
                                 (value === "Maintenance needed"
                                   ? "text-red-700"
-                                  : value === "No maintenance needed"
-                                  ? "text-green-700"
                                   : "text-gray-700")
                               }
                             >
