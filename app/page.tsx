@@ -154,6 +154,7 @@ export default function Home() {
   const [status, setStatus] = useState<string>("");
   const [selectedPoleId, setSelectedPoleId] = useState<string | null>(null);
   const tableContainerRef = useRef<HTMLDivElement | null>(null);
+  const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
   const [commentsByPole, setCommentsByPole] = useState<Record<string, string>>({});
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
@@ -326,7 +327,9 @@ export default function Home() {
 
       if (error) throw error;
 
-      const index = (data ?? []).findIndex((r: any) => r.pole_id === poleId);
+      const index = (data ?? []).findIndex(
+        (r: any) => String(r.pole_id) === String(poleId)
+      );
       if (index === -1) return;
 
       if (rowsPerPage === "all") return;
@@ -939,18 +942,21 @@ export default function Home() {
   );
 
   useEffect(() => {
-    if (!selectedPoleId || !tableContainerRef.current) return;
+    if (!selectedPoleId) return;
 
-    const row = tableContainerRef.current.querySelector<HTMLTableRowElement>(
-      `tr[data-pole-id="${selectedPoleId}"]`
-    );
+    const normalizedId = String(selectedPoleId).trim();
 
-    if (row) {
-      row.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-    }
+    const raf = requestAnimationFrame(() => {
+      const row = rowRefs.current[normalizedId];
+      if (row) {
+        row.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      }
+    });
+
+    return () => cancelAnimationFrame(raf);
   }, [selectedPoleId, paginatedRows]);
 
   useEffect(() => {
@@ -1435,10 +1441,12 @@ export default function Home() {
             <div className="w-full h-[280px] sm:h-[340px] md:h-[420px] lg:h-[500px] border border-gray-200 rounded-lg overflow-hidden">
               <PoleMap
                 points={filteredPoints}
-                selected={selectedPoint}
-                onSelect={async (id: string) => {
-                  setSelectedPoleId(id);
-                  await goToPoleInTable(id);
+                selected={filteredPoints.find(p => p.id === selectedPoleId) || null}
+                onSelect={(id: string) => {
+                  const normalizedId = String(id).trim();
+                  console.log("marker clicked:", normalizedId);
+                  setSelectedPoleId(normalizedId);
+                  goToPoleInTable(normalizedId);
                 }}
                 resetViewTrigger={zoomToAllTrigger}
               />
@@ -1650,13 +1658,16 @@ export default function Home() {
                   return (
                     <tr
                       key={`${poleId}-${idx}`}
-                      data-pole-id={poleId}
-                      onClick={() => setSelectedPoleId(poleId || null)}
+                      ref={(el) => {
+                        if (poleId) rowRefs.current[String(poleId).trim()] = el;
+                      }}
+                      data-pole-id={String(poleId).trim()}
+                      onClick={() => setSelectedPoleId(String(poleId).trim() || null)}
                       className={
                         "cursor-pointer transition-colors " +
-                        (poleId === selectedPoleId
-                          ? "bg-yellow-100 ring-2 ring-inset ring-yellow-400"
-                          :String(row?.["Status"] ?? "").trim() === "Maintenance needed"
+                        (String(poleId).trim() === String(selectedPoleId ?? "").trim()
+                          ? "bg-yellow-100"
+                          : String(row?.["Status"] ?? "").trim() === "Maintenance needed"
                           ? "bg-red-50"
                           : idx % 2 === 0
                           ? "bg-white"
