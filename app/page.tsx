@@ -150,11 +150,13 @@ function buildMapPopupData(row: Row): Row {
 export default function Home() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const router = useRouter();
+  const normalizePoleId = (value: unknown) => String(value ?? "").trim();
 
   const [status, setStatus] = useState<string>("");
   const [selectedPoleId, setSelectedPoleId] = useState<string | null>(null);
   const tableContainerRef = useRef<HTMLDivElement | null>(null);
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
+  const pendingScrollPoleIdRef = useRef<string | null>(null);
   const [commentsByPole, setCommentsByPole] = useState<Record<string, string>>({});
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
@@ -307,31 +309,54 @@ export default function Home() {
   async function goToPoleInTable(poleId: string) {
     if (!activeOrgId || !poleId) return;
 
+    const normalizedId = normalizePoleId(poleId);
+    pendingScrollPoleIdRef.current = normalizedId;
+    setSelectedPoleId(normalizedId);
+
     try {
       const sortKey = getServerSortColumn(sortColumn);
       const ascending = sortDirection === "asc";
 
-      let query = supabase
-        .from("poles")
-        .select("pole_id", { count: "exact" })
-        .eq("org_id", activeOrgId);
+      const pageSize = 1000;
+      let from = 0;
+      let index = -1;
 
-      if (phiFilter === "lte69") query = query.lte("phi", 69);
-      if (phiFilter === "70to89") query = query.gte("phi", 70).lte("phi", 89);
-      if (phiFilter === "gte90") query = query.gte("phi", 90);
+      while (true) {
+        let query = supabase
+          .from("poles")
+          .select("pole_id")
+          .eq("org_id", activeOrgId);
 
-      if (dateFrom) query = query.gte("date_tested", dateFrom);
-      if (dateTo) query = query.lte("date_tested", dateTo);
+        if (phiFilter === "lte69") query = query.lte("phi", 69);
+        if (phiFilter === "70to89") query = query.gte("phi", 70).lte("phi", 89);
+        if (phiFilter === "gte90") query = query.gte("phi", 90);
 
-      const { data, error } = await query.order(sortKey, { ascending });
+        if (dateFrom) query = query.gte("date_tested", dateFrom);
+        if (dateTo) query = query.lte("date_tested", dateTo);
 
-      if (error) throw error;
+        query = query
+          .order(sortKey, { ascending })
+          .range(from, from + pageSize - 1);
 
-      const index = (data ?? []).findIndex(
-        (r: any) => String(r.pole_id) === String(poleId)
-      );
+        const { data, error } = await query;
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+
+        const ids = data.map((r: any) => normalizePoleId(r.pole_id));
+        const localIndex = ids.indexOf(normalizedId);
+
+        if (localIndex !== -1) {
+          index = from + localIndex;
+          break;
+        }
+
+        if (data.length < pageSize) break;
+        from += pageSize;
+      }
+
+      console.log("goToPoleInTable paged", { normalizedId, index });
+
       if (index === -1) return;
-
       if (rowsPerPage === "all") return;
 
       const page = Math.floor(index / rowsPerPage) + 1;
@@ -903,7 +928,7 @@ export default function Home() {
   const points = useMemo<PolePoint[]>(() => {
     return mapRows
       .map((r) => {
-        const id = getPoleId(r);
+        const id = String(getPoleId(r) ?? "").trim();
         if (!id) return null;
 
         const latKey = LAT_KEYS.find((k) => r?.[k] !== undefined);
@@ -937,27 +962,41 @@ export default function Home() {
   }, [points, poleSearch]);
 
   const selectedPoint = useMemo(
-    () => filteredPoints.find((p) => p.id === selectedPoleId) ?? null,
-    [filteredPoints, selectedPoleId]
+    () =>
+      points.find(
+        (p) => normalizePoleId(p.id) === normalizePoleId(selectedPoleId)
+      ) ?? null,
+    [points, selectedPoleId]
   );
 
   useEffect(() => {
-    if (!selectedPoleId) return;
+    const targetId = String(
+      pendingScrollPoleIdRef.current ?? selectedPoleId ?? ""
+    ).trim();
 
-    const normalizedId = String(selectedPoleId).trim();
+    if (!targetId) return;
 
     const raf = requestAnimationFrame(() => {
-      const row = rowRefs.current[normalizedId];
+      const row = rowRefs.current[targetId];
+
+      console.log("scroll effect", {
+        targetId,
+        foundRow: !!row,
+        currentPage,
+        paginatedCount: paginatedRows.length,
+      });
+
       if (row) {
         row.scrollIntoView({
           behavior: "smooth",
           block: "center",
         });
+        pendingScrollPoleIdRef.current = null;
       }
     });
 
     return () => cancelAnimationFrame(raf);
-  }, [selectedPoleId, paginatedRows]);
+  }, [selectedPoleId, paginatedRows, currentPage]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -1441,11 +1480,11 @@ export default function Home() {
             <div className="w-full h-[280px] sm:h-[340px] md:h-[420px] lg:h-[500px] border border-gray-200 rounded-lg overflow-hidden">
               <PoleMap
                 points={filteredPoints}
-                selected={filteredPoints.find(p => p.id === selectedPoleId) || null}
+                selected={selectedPoint}
                 onSelect={(id: string) => {
-                  const normalizedId = String(id).trim();
-                  console.log("marker clicked:", normalizedId);
+                  const normalizedId = normalizePoleId(id);
                   setSelectedPoleId(normalizedId);
+                  pendingScrollPoleIdRef.current = normalizedId;
                   goToPoleInTable(normalizedId);
                 }}
                 resetViewTrigger={zoomToAllTrigger}
@@ -1659,10 +1698,14 @@ export default function Home() {
                     <tr
                       key={`${poleId}-${idx}`}
                       ref={(el) => {
-                        if (poleId) rowRefs.current[String(poleId).trim()] = el;
+                        const id = normalizePoleId(poleId);
+                        if (id) rowRefs.current[id] = el;
                       }}
                       data-pole-id={String(poleId).trim()}
-                      onClick={() => setSelectedPoleId(String(poleId).trim() || null)}
+                      onClick={() => {
+                        const id = normalizePoleId(poleId);
+                        setSelectedPoleId(id);
+                      }}
                       className={
                         "cursor-pointer transition-colors " +
                         (String(poleId).trim() === String(selectedPoleId ?? "").trim()
