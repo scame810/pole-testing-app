@@ -160,7 +160,7 @@ export default function Home() {
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [currentPage, setCurrentPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState<number | "all">(10);
+  const [rowsPerPage, setRowsPerPage] = useState<number>(10);
   const [supabaseStatus, setSupabaseStatus] = useState("not run");
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [selectedPoleIds, setSelectedPoleIds] = useState<Record<string, boolean>>({});
@@ -363,7 +363,6 @@ export default function Home() {
       }
 
       if (index === -1) return;
-      if (rowsPerPage === "all") return;
 
       const page = Math.floor(index / rowsPerPage) + 1;
       if (page !== currentPage) {
@@ -476,35 +475,43 @@ export default function Home() {
   async function loadPolesFromSupabase(orgId: string) {
     setSupabaseStatus("loading poles...");
 
-    const { data, error } = await supabase
-      .from("poles")
-      .select("pole_id, latitude, longitude, data, comments")
-      .eq("org_id", orgId)
-      .limit(2000);
+    try {
+      const pageSize = 1000;
+      let from = 0;
+      let loaded = 0;
+      const nextComments: Record<string, string> = {};
 
-    if (error) {
-      setSupabaseStatus(`error: ${error.message}`);
-      return;
-    }
+      while (true) {
+        const { data, error } = await supabase
+          .from("poles")
+          .select("pole_id, latitude, longitude, data, comments")
+          .eq("org_id", orgId)
+          .range(from, from + pageSize - 1);
 
-    const nextComments: Record<string, string> = {};
+        if (error) throw error;
+        if (!data || data.length === 0) break;
 
-    const rows: Row[] = (data ?? []).map((r: any) => {
-      if (r.comments !== undefined && r.comments !== null && String(r.comments).trim() !== "") {
-        nextComments[r.pole_id] = String(r.comments);
+        for (const r of data) {
+          if (
+            r.comments !== undefined &&
+            r.comments !== null &&
+            String(r.comments).trim() !== ""
+          ) {
+            nextComments[r.pole_id] = String(r.comments);
+          }
+        }
+
+        loaded += data.length;
+
+        if (data.length < pageSize) break;
+        from += pageSize;
       }
 
-      return {
-        "Pole ID": r.pole_id,
-        Latitude: r.latitude,
-        Longitude: r.longitude,
-        ...(r.data ?? {}),
-        Comments: r.comments ?? "",
-      };
-    });
-
-    setCommentsByPole(nextComments);
-    setSupabaseStatus(`ok (loaded: ${rows.length})`);
+      setCommentsByPole(nextComments);
+      setSupabaseStatus(`ok (loaded: ${loaded})`);
+    } catch (e: any) {
+      setSupabaseStatus(`error: ${e?.message ?? "Failed to load poles"}`);
+    }
   }
 
   async function loadTablePage(orgId: string) {
@@ -513,9 +520,9 @@ export default function Home() {
     setTableLoading(true);
 
     try {
-      const pageSize = rowsPerPage === "all" ? 5000 : rowsPerPage;
-      const from = rowsPerPage === "all" ? 0 : (currentPage - 1) * rowsPerPage;
-      const to = rowsPerPage === "all" ? pageSize - 1 : from + rowsPerPage - 1;
+      const pageSize = rowsPerPage;
+      const from = (currentPage - 1) * rowsPerPage;
+      const to = from + rowsPerPage - 1;
 
       let query = supabase
         .from("poles")
@@ -618,7 +625,7 @@ export default function Home() {
           "Images": r.data?.["Images"] ?? "",
         }));
 
-        allRows = [...allRows, ...rows];
+        allRows.push(...rows);
 
         if (data.length < pageSize) break;
         from += pageSize;
@@ -810,7 +817,7 @@ export default function Home() {
           Comments: r.comments ?? "",
         }));
 
-        allRows = [...allRows, ...rows];
+        allRows.push(...rows);
 
         if (data.length < pageSize) break;
         from += pageSize;
@@ -879,15 +886,18 @@ export default function Home() {
           Comments: r.comments ?? "",
         }));
 
-        allRows = [...allRows, ...rows];
+        allRows.push(...rows);
       }
 
       if (allRows.length === 0) return;
 
-      const selectedOrder = new Map(selectedIds.map((id, index) => [id, index]));
+      const selectedOrder = new Map(
+       selectedIds.map((id, index) => [normalizePoleId(id), index])
+      );
+
       allRows.sort((a, b) => {
-        const aId = getPoleId(a) ?? "";
-        const bId = getPoleId(b) ?? "";
+        const aId = normalizePoleId(getPoleId(a));
+        const bId = normalizePoleId(getPoleId(b));
         return (selectedOrder.get(aId) ?? 0) - (selectedOrder.get(bId) ?? 0);
       });
 
@@ -917,16 +927,14 @@ export default function Home() {
   const selectedCount = Object.values(selectedPoleIds).filter(Boolean).length;
 
   const totalRows = tableTotalRows;
-  const totalPages =
-    rowsPerPage === "all" ? 1 : Math.max(1, Math.ceil(totalRows / rowsPerPage));
+  const totalPages = Math.max(1, Math.ceil(totalRows / rowsPerPage));
 
   const paginatedRows = tableRows;
 
   const startRow =
-    totalRows === 0 ? 0 : rowsPerPage === "all" ? 1 : (currentPage - 1) * rowsPerPage + 1;
+  totalRows === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1;
 
-  const endRow =
-    rowsPerPage === "all" ? totalRows : Math.min(currentPage * rowsPerPage, totalRows);
+  const endRow = Math.min(currentPage * rowsPerPage, totalRows);
 
   const pageNumbers = getPageNumbers(currentPage, totalPages);
 
@@ -1559,22 +1567,22 @@ export default function Home() {
               <select
                 value={rowsPerPage}
                 onChange={(e) => {
-                  const value = e.target.value;
-                  setRowsPerPage(value === "all" ? "all" : Number(value));
+                  setRowsPerPage(Number(e.target.value));
+                  setCurrentPage(1);
                 }}
                 className="rounded-md border px-2 py-1 text-sm"
               >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-                <option value="all">All</option>
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="250">250</option>
+                <option value="500">500</option>
               </select>
 
               <span>rows per page</span>
             </div>
 
-          {rowsPerPage !== "all" && (
             <div className="flex items-center gap-1">
               <button
                 type="button"
@@ -1616,8 +1624,7 @@ export default function Home() {
                 ›
               </button>
             </div>
-          )}
-        </div>
+          </div>
 
           <div
             className="overflow-x-auto max-h-[500px] overflow-y-auto"
