@@ -56,6 +56,8 @@ function makeColorIcon(color: string) {
   });
 }
 
+const normalizePoleId = (value: unknown) => String(value ?? "").trim();
+
 function SelectedController({
   selected,
   markerRefs,
@@ -67,8 +69,9 @@ function SelectedController({
 
   useEffect(() => {
     if (!selected) return;
+    if (!Number.isFinite(selected.lat) || !Number.isFinite(selected.lng)) return;
 
-    const id = String(selected.id).trim();
+    const id = normalizePoleId(selected.id);
     const marker = markerRefs.current.get(id);
 
     map.setView([selected.lat, selected.lng], 18, { animate: false });
@@ -143,7 +146,7 @@ export default function PoleMap({
           zoomToBoundsOnClick
         >
           {points.map((p) => {
-            const id = String(p.id).trim();
+            const id = normalizePoleId(p.id);
 
             return (
               <Marker
@@ -169,9 +172,7 @@ export default function PoleMap({
                           <td style={{ fontWeight: 600, padding: "4px 6px" }}>
                             Pole ID
                           </td>
-                          <td style={{ padding: "4px 6px" }}>
-                            {id}
-                          </td>
+                          <td style={{ padding: "4px 6px" }}>{id}</td>
                         </tr>
                         <tr>
                           <td style={{ fontWeight: 600, padding: "4px 6px" }}>

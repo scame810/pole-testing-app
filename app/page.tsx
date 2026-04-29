@@ -154,7 +154,6 @@ export default function Home() {
 
   const [status, setStatus] = useState<string>("");
   const [selectedPoleId, setSelectedPoleId] = useState<string | null>(null);
-  const tableContainerRef = useRef<HTMLDivElement | null>(null);
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
   const pendingScrollPoleIdRef = useRef<string | null>(null);
   const [commentsByPole, setCommentsByPole] = useState<Record<string, string>>({});
@@ -306,6 +305,15 @@ export default function Home() {
     }, 500);
   }
 
+  function selectPole(poleId: string) {
+    const id = normalizePoleId(poleId);
+    if (!id) return;
+
+    setSelectedPoleId(id);
+    pendingScrollPoleIdRef.current = id;
+    goToPoleInTable(id);
+  }
+  
   async function goToPoleInTable(poleId: string) {
     if (!activeOrgId || !poleId) return;
 
@@ -353,8 +361,6 @@ export default function Home() {
         if (data.length < pageSize) break;
         from += pageSize;
       }
-
-      console.log("goToPoleInTable paged", { normalizedId, index });
 
       if (index === -1) return;
       if (rowsPerPage === "all") return;
@@ -477,7 +483,6 @@ export default function Home() {
       .limit(2000);
 
     if (error) {
-      console.log("Load poles error:", error);
       setSupabaseStatus(`error: ${error.message}`);
       return;
     }
@@ -970,21 +975,14 @@ export default function Home() {
   );
 
   useEffect(() => {
-    const targetId = String(
+    const targetId = normalizePoleId(
       pendingScrollPoleIdRef.current ?? selectedPoleId ?? ""
-    ).trim();
+    );
 
     if (!targetId) return;
 
     const raf = requestAnimationFrame(() => {
       const row = rowRefs.current[targetId];
-
-      console.log("scroll effect", {
-        targetId,
-        foundRow: !!row,
-        currentPage,
-        paginatedCount: paginatedRows.length,
-      });
 
       if (row) {
         row.scrollIntoView({
@@ -997,6 +995,10 @@ export default function Home() {
 
     return () => cancelAnimationFrame(raf);
   }, [selectedPoleId, paginatedRows, currentPage]);
+
+  useEffect(() => {
+    rowRefs.current = {};
+  }, [paginatedRows]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -1241,11 +1243,11 @@ export default function Home() {
     setMapRows([]);
   };
   const allCurrentPageSelected =
-  paginatedRows.length > 0 &&
-  paginatedRows.every((row) => {
-    const id = getPoleId(row) ?? "";
-    return !!selectedPoleIds[id];
-  });
+    paginatedRows.length > 0 &&
+    paginatedRows.every((row) => {
+      const id = normalizePoleId(getPoleId(row));
+      return !!selectedPoleIds[id];
+    });
 
   return (
     <>
@@ -1431,7 +1433,7 @@ export default function Home() {
             className="rounded-md bg-[#094929] px-4 py-2 text-sm text-white hover:bg-[#0c5a33]"
           >
             Zoom Out to All Poles
-          </button>/
+          </button>
 
           <button
             type="button"
@@ -1481,12 +1483,7 @@ export default function Home() {
               <PoleMap
                 points={filteredPoints}
                 selected={selectedPoint}
-                onSelect={(id: string) => {
-                  const normalizedId = normalizePoleId(id);
-                  setSelectedPoleId(normalizedId);
-                  pendingScrollPoleIdRef.current = normalizedId;
-                  goToPoleInTable(normalizedId);
-                }}
+                onSelect={selectPole}
                 resetViewTrigger={zoomToAllTrigger}
               />
             </div>
@@ -1623,7 +1620,6 @@ export default function Home() {
         </div>
 
           <div
-            ref={tableContainerRef}
             className="overflow-x-auto max-h-[500px] overflow-y-auto"
           >
 
@@ -1657,7 +1653,7 @@ export default function Home() {
                         setSelectedPoleIds((prev) => {
                           const next = { ...prev };
                           for (const row of paginatedRows) {
-                            const id = getPoleId(row) ?? "";
+                            const id = normalizePoleId(getPoleId(row));
                             if (id) next[id] = checked;
                           }
                           return next;
@@ -1692,7 +1688,7 @@ export default function Home() {
 
               <tbody>
                 {paginatedRows.map((row, idx) => {
-                  const poleId = getPoleId(row) ?? "";
+                  const poleId = normalizePoleId(getPoleId(row));
 
                   return (
                     <tr
@@ -1704,19 +1700,19 @@ export default function Home() {
                       data-pole-id={String(poleId).trim()}
                       onClick={() => {
                         const id = normalizePoleId(poleId);
-                        setSelectedPoleId(id);
+                        if (id) selectPole(id);
                       }}
                       className={
                         "cursor-pointer transition-colors " +
-                        (String(poleId).trim() === String(selectedPoleId ?? "").trim()
+                        (normalizePoleId(poleId) === normalizePoleId(selectedPoleId)
                           ? "bg-yellow-100"
                           : String(row?.["Status"] ?? "").trim() === "Maintenance needed"
                           ? "bg-red-50"
                           : idx % 2 === 0
                           ? "bg-white"
                           : "bg-gray-50")
-                      }
-                    >
+                        }
+                      >
                       <td className="border p-2 align-top">
                         <input
                           type="checkbox"
