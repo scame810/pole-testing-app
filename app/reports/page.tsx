@@ -85,9 +85,83 @@ function getServerSortColumn(sortColumn: SortColumn): string {
   }
 }
 
+function getPoleStatus(row: any) {
+  return String(
+    row.status ??
+      row.Status ??
+      row.STATUS ??
+      row.data?.Status ??
+      row.data?.status ??
+      row.data?.STATUS ??
+      row.raw_data?.Status ??
+      row.raw_data?.status ??
+      row.raw_data?.STATUS ??
+      ""
+  )
+    .trim()
+    .toLowerCase();
+}
+
+function normalizePoleRow(row: any): MaintenancePoleRow {
+  const raw = row.raw_data ?? row.data ?? row;
+
+  return {
+    id: row.id,
+    org_id: row.org_id,
+    pole_id:
+      row.pole_id ??
+      raw?.["Pole ID"] ??
+      raw?.["Pole No"] ??
+      raw?.["Pole"] ??
+      null,
+    latitude:
+      row.latitude ??
+      toNumberOrNull(raw?.["Latitude"]) ??
+      null,
+    longitude:
+      row.longitude ??
+      toNumberOrNull(raw?.["Longitude"]) ??
+      null,
+    comments:
+      row.comments ??
+      raw?.["Comments"] ??
+      raw?.["comments"] ??
+      null,
+    raw_data: raw,
+    uploaded_at: row.uploaded_at ?? row.created_at ?? "",
+  };
+}
+
 export default function ReportsPage() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const saveTimersRef = useRef<Record<string, any>>({});
+
+  async function fetchAllPoleRows(currentOrgId: string) {
+    const pageSize = 1000;
+    let from = 0;
+    let allRows: any[] = [];
+
+    while (true) {
+      const { data, error } = await supabase
+        .from("poles")
+        .select("*")
+        .eq("org_id", currentOrgId)
+        .range(from, from + pageSize - 1);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      const batch = data || [];
+      allRows = [...allRows, ...batch];
+
+      if (batch.length < pageSize) break;
+
+      from += pageSize;
+    }
+
+    return allRows;
+  }
 
   const [orgId, setOrgId] = useState<string | null>(null);
   const [activeRole, setActiveRole] = useState<"owner" | "member" | "viewer" | null>(null);
@@ -194,47 +268,83 @@ export default function ReportsPage() {
   }
 
   async function loadMaintenanceRows(currentOrgId: string) {
-    const from = rowsPerPage === "all" ? 0 : (currentPage - 1) * rowsPerPage;
-    const to = rowsPerPage === "all" ? 99999 : from + rowsPerPage - 1;
+    let data: any[] = [];
 
-    let query = supabase
-      .from("maintenance_poles")
-      .select("*", { count: "exact" })
-      .eq("org_id", currentOrgId);
-
-    if (phiFilter === "lte69") query = query.lte("phi", 69);
-    if (phiFilter === "70to89") query = query.gte("phi", 70).lte("phi", 89);
-    if (phiFilter === "gte90") query = query.gte("phi", 90);
-
-    if (dateFrom) query = query.gte("date_tested", dateFrom);
-    if (dateTo) query = query.lte("date_tested", dateTo);
-
-    query = query.order(getServerSortColumn(sortColumn), {
-      ascending: sortDirection === "asc",
-      nullsFirst: false,
-    });
-
-    if (rowsPerPage !== "all") {
-      query = query.range(from, to);
-    }
-
-    const { data, error, count } = await query;
-
-    if (error) {
+    try {
+      data = await fetchAllPoleRows(currentOrgId);
+    } catch (error: any) {
       setMessage(`Could not load maintenance poles: ${error.message}`);
       return;
     }
 
-    const rows = (data || []) as MaintenancePoleRow[];
-    setMaintenanceRows(rows);
-    setMaintenanceTotalRows(count ?? 0);
+    const allRows = (data || []).map(normalizePoleRow);
+
+    let filteredRows = allRows.filter(
+      (row) => getPoleStatus(row.raw_data) === "maintenance needed"
+    );
+
+    if (phiFilter === "lte69") {
+      filteredRows = filteredRows.filter((row) => {
+        const phi = Number(
+          row.raw_data?.["Pole Health Index(PHI)"] ??
+            row.raw_data?.["PHI"] ??
+            row.raw_data?.["phi"] ??
+            row.raw_data?.["Pole Health Index"] ??
+            ""
+        );
+
+        return !Number.isNaN(phi) && phi <= 69;
+      });
+    }
+
+    if (phiFilter === "70to89") {
+      filteredRows = filteredRows.filter((row) => {
+        const phi = Number(
+          row.raw_data?.["Pole Health Index(PHI)"] ??
+            row.raw_data?.["PHI"] ??
+            row.raw_data?.["phi"] ??
+            row.raw_data?.["Pole Health Index"] ??
+            ""
+        );
+
+        return !Number.isNaN(phi) && phi >= 70 && phi <= 89;
+      });
+    }
+
+    if (phiFilter === "gte90") {
+      filteredRows = filteredRows.filter((row) => {
+        const phi = Number(
+          row.raw_data?.["Pole Health Index(PHI)"] ??
+            row.raw_data?.["PHI"] ??
+            row.raw_data?.["phi"] ??
+            row.raw_data?.["Pole Health Index"] ??
+            ""
+        );
+
+        return !Number.isNaN(phi) && phi >= 90;
+      });
+    }
+
+    setMaintenanceTotalRows(filteredRows.length);
+
+    const paginatedRows =
+      rowsPerPage === "all"
+        ? filteredRows
+        : filteredRows.slice(
+            (currentPage - 1) * rowsPerPage,
+            currentPage * rowsPerPage
+          );
+
+    setMaintenanceRows(paginatedRows);
 
     const nextComments: Record<string, string> = {};
-    for (const row of rows) {
+
+    for (const row of paginatedRows) {
       const key = row.pole_id ?? "";
       if (!key) continue;
       nextComments[key] = row.comments ?? "";
     }
+
     setCommentsByPole((prev) => ({ ...prev, ...nextComments }));
   }
 
@@ -348,7 +458,7 @@ export default function ReportsPage() {
     saveTimersRef.current[poleId] = setTimeout(async () => {
       try {
         const { error } = await supabase
-          .from("maintenance_poles")
+          .from("poles")
           .update({ comments: comment })
           .eq("org_id", orgId)
           .eq("pole_id", poleId);
@@ -434,30 +544,83 @@ export default function ReportsPage() {
   }
 
   async function fetchAllFilteredMaintenanceRows(currentOrgId: string) {
-    let query = supabase
-      .from("maintenance_poles")
-      .select("*")
-      .eq("org_id", currentOrgId);
+    const data = await fetchAllPoleRows(currentOrgId);
 
-    if (phiFilter === "lte69") query = query.lte("phi", 69);
-    if (phiFilter === "70to89") query = query.gte("phi", 70).lte("phi", 89);
-    if (phiFilter === "gte90") query = query.gte("phi", 90);
+    const allRows = (data || []).map(normalizePoleRow);
 
-    if (dateFrom) query = query.gte("date_tested", dateFrom);
-    if (dateTo) query = query.lte("date_tested", dateTo);
+    let filteredRows = allRows.filter(
+      (row) => getPoleStatus(row.raw_data) === "maintenance needed"
+    );
 
-    query = query.order(getServerSortColumn(sortColumn), {
-      ascending: sortDirection === "asc",
-      nullsFirst: false,
-    });
+    if (phiFilter === "lte69") {
+      filteredRows = filteredRows.filter((row) => {
+        const phi = Number(
+          row.raw_data?.["Pole Health Index(PHI)"] ??
+            row.raw_data?.["PHI"] ??
+            row.raw_data?.["phi"] ??
+            row.raw_data?.["Pole Health Index"] ??
+            ""
+        );
 
-    const { data, error } = await query;
-
-    if (error) {
-      throw new Error(error.message);
+        return !Number.isNaN(phi) && phi <= 69;
+      });
     }
 
-    return (data || []) as MaintenancePoleRow[];
+    if (phiFilter === "70to89") {
+      filteredRows = filteredRows.filter((row) => {
+        const phi = Number(
+          row.raw_data?.["Pole Health Index(PHI)"] ??
+            row.raw_data?.["PHI"] ??
+            row.raw_data?.["phi"] ??
+            row.raw_data?.["Pole Health Index"] ??
+            ""
+        );
+
+        return !Number.isNaN(phi) && phi >= 70 && phi <= 89;
+      });
+    }
+
+    if (phiFilter === "gte90") {
+      filteredRows = filteredRows.filter((row) => {
+        const phi = Number(
+          row.raw_data?.["Pole Health Index(PHI)"] ??
+            row.raw_data?.["PHI"] ??
+            row.raw_data?.["phi"] ??
+            row.raw_data?.["Pole Health Index"] ??
+            ""
+        );
+
+        return !Number.isNaN(phi) && phi >= 90;
+      });
+    }
+
+    if (dateFrom) {
+      filteredRows = filteredRows.filter((row) => {
+        const dateTested = String(
+          row.raw_data?.["Date Tested"] ??
+            row.raw_data?.["date_tested"] ??
+            row.raw_data?.["Date"] ??
+            ""
+        );
+
+        return dateTested >= dateFrom;
+      });
+    }
+
+    if (dateTo) {
+      filteredRows = filteredRows.filter((row) => {
+        const dateTested = String(
+          row.raw_data?.["Date Tested"] ??
+            row.raw_data?.["date_tested"] ??
+            row.raw_data?.["Date"] ??
+            ""
+        );
+
+        return dateTested <= dateTo;
+      });
+    }
+
+    return filteredRows;
   }
 
   const totalRows = maintenanceTotalRows;
@@ -545,19 +708,6 @@ export default function ReportsPage() {
               <div>
                 <h2 className="text-xl font-semibold">Maintenance Poles</h2>
               </div>
-
-              {canUpload && (
-                <label className="inline-flex cursor-pointer items-center rounded-md border px-4 py-2 text-sm font-medium hover:bg-gray-50">
-                  {uploading ? "Uploading..." : "Upload CSV"}
-                  <input
-                    type="file"
-                    accept=".csv"
-                    className="hidden"
-                    onChange={handleMaintenanceCsvUpload}
-                    disabled={uploading}
-                  />
-                </label>
-              )}
             </div>
 
             {message && (

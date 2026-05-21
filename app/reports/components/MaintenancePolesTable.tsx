@@ -24,6 +24,7 @@ const columns = [
   "Latitude",
   "Longitude",
   "Date Tested",
+  "Status",
   "Test Observations",
   "Pole Health Index(PHI)",
   "Foundation Health Index(FHI)",
@@ -59,6 +60,17 @@ function getCellValue(row: MaintenancePoleRow, column: string) {
   return row.raw_data?.[column] ?? "";
 }
 
+function getStatus(row: MaintenancePoleRow) {
+  return String(
+    row.raw_data?.["Status"] ??
+      row.raw_data?.["status"] ??
+      row.raw_data?.["STATUS"] ??
+      ""
+  )
+    .trim()
+    .toLowerCase();
+}
+
 export default function MaintenancePolesTable({
   rows,
   selectedPoleId,
@@ -88,10 +100,14 @@ export default function MaintenancePolesTable({
   sortDirection: "asc" | "desc";
   onSort: (column: SortColumn) => void;
 }) {
-  if (!rows.length) {
+  const maintenanceRows = rows.filter(
+    (row) => getStatus(row) === "maintenance needed"
+  );
+
+  if (!maintenanceRows.length) {
     return (
       <div className="rounded-lg border p-4 text-sm text-gray-600">
-        No maintenance pole data uploaded yet.
+        No poles marked Maintenance needed yet.
       </div>
     );
   }
@@ -109,7 +125,7 @@ export default function MaintenancePolesTable({
                   const checked = e.target.checked;
                   setSelectedPoleIds((prev) => {
                     const next = { ...prev };
-                    for (const row of rows) {
+                    for (const row of maintenanceRows) {
                       const id = row.pole_id ?? "";
                       if (id) next[id] = checked;
                     }
@@ -151,7 +167,7 @@ export default function MaintenancePolesTable({
         </thead>
 
         <tbody>
-          {rows.map((row, idx) => {
+          {maintenanceRows.map((row, idx) => {
             const poleId = row.pole_id ?? "";
 
             return (
