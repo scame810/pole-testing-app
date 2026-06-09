@@ -18,13 +18,7 @@ type MaintenancePoleRow = {
   uploaded_at: string;
 };
 
-type SortColumn =
-  | "Pole ID"
-  | "Latitude"
-  | "Longitude"
-  | "Date Tested"
-  | "Pole Health Index(PHI)"
-  | null;
+type SortColumn = string | null;
 
 function toNumberOrNull(value: any): number | null {
   if (value === undefined || value === null || String(value).trim() === "") {

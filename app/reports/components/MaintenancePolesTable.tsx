@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemo } from "react";
+
 type MaintenancePoleRow = {
   id: string;
   org_id: string;
@@ -11,13 +13,7 @@ type MaintenancePoleRow = {
   uploaded_at: string;
 };
 
-type SortColumn =
-  | "Pole ID"
-  | "Latitude"
-  | "Longitude"
-  | "Date Tested"
-  | "Pole Health Index(PHI)"
-  | null;
+type SortColumn = string | null;
 
 const columns = [
   "Pole ID",
@@ -60,6 +56,35 @@ function getCellValue(row: MaintenancePoleRow, column: string) {
   return row.raw_data?.[column] ?? "";
 }
 
+function getSortValue(row: MaintenancePoleRow, column: string) {
+  const value = getCellValue(row, column);
+
+  if (column === "Date Tested") {
+    const date = new Date(String(value));
+    return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+  }
+
+  const numericColumns = [
+    "Latitude",
+    "Longitude",
+    "Pole Health Index(PHI)",
+    "Foundation Health Index(FHI)",
+    "RSV (%)",
+    "Pole Length (ft)",
+    "Measured Diameter (inches)",
+    "OHMS",
+    "Ground Rods",
+    "OHMS Rod 1",
+  ];
+
+  if (numericColumns.includes(column)) {
+    const n = Number(String(value ?? "").replace(/,/g, "").trim());
+    return Number.isFinite(n) ? n : null;
+  }
+
+  return String(value ?? "").toLowerCase().trim();
+}
+
 function getStatus(row: MaintenancePoleRow) {
   return String(
     row.raw_data?.["Status"] ??
@@ -100,9 +125,26 @@ export default function MaintenancePolesTable({
   sortDirection: "asc" | "desc";
   onSort: (column: SortColumn) => void;
 }) {
-  const maintenanceRows = rows.filter(
-    (row) => getStatus(row) === "maintenance needed"
-  );
+  const maintenanceRows = useMemo(() => {
+    const filtered = rows.filter(
+      (row) => getStatus(row) === "maintenance needed"
+    );
+
+    if (!sortColumn) return filtered;
+
+    return [...filtered].sort((a, b) => {
+      const aVal = getSortValue(a, sortColumn);
+      const bVal = getSortValue(b, sortColumn);
+
+      if (aVal === null && bVal === null) return 0;
+      if (aVal === null) return sortDirection === "asc" ? 1 : -1;
+      if (bVal === null) return sortDirection === "asc" ? -1 : 1;
+
+      if (aVal < bVal) return sortDirection === "asc" ? -1 : 1;
+      if (aVal > bVal) return sortDirection === "asc" ? 1 : -1;
+      return 0;
+    });
+  }, [rows, sortColumn, sortDirection]);
 
   if (!maintenanceRows.length) {
     return (
@@ -136,12 +178,7 @@ export default function MaintenancePolesTable({
             </th>
 
             {columns.map((column) => {
-              const sortable =
-                column === "Pole ID" ||
-                column === "Latitude" ||
-                column === "Longitude" ||
-                column === "Date Tested" ||
-                column === "Pole Health Index(PHI)";
+              const sortable = true;
 
               return (
                 <th
@@ -150,9 +187,7 @@ export default function MaintenancePolesTable({
                     "border border-gray-300 px-4 py-3 text-left font-semibold whitespace-nowrap " +
                     (sortable ? "cursor-pointer select-none hover:bg-gray-300" : "")
                   }
-                  onClick={() => {
-                    if (sortable) onSort(column as SortColumn);
-                  }}
+                  onClick={() => onSort(column)}
                 >
                   {column}
                   {sortColumn === column && (
