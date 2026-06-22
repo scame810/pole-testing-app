@@ -139,6 +139,63 @@ function getServerSortColumn(sortColumn: string | null): string {
   }
 }
 
+function isServerSortableColumn(column: string | null) {
+  return (
+    column === "Pole ID" ||
+    column === "Latitude" ||
+    column === "Longitude" ||
+    column === "Pole Health Index(PHI)" ||
+    column === "Date Tested"
+  );
+}
+
+function getDashboardSortValue(row: Row, column: string) {
+  const value = row[column] ?? "";
+
+  if (column === "Date Tested") {
+    const date = new Date(String(value));
+    return Number.isNaN(date.getTime()) ? null : date.getTime();
+  }
+
+  const numericColumns = [
+    "Latitude",
+    "Longitude",
+    "Pole Health Index(PHI)",
+    "Foundation Health Index(FHI)",
+    "RSV (%)",
+    "Pole Length (ft)",
+    "Measured Diameter (inches)",
+    "OHMS",
+    "Ground Rods",
+    "OHMS Rod 1",
+  ];
+
+  if (numericColumns.includes(column)) {
+    const n = Number(String(value ?? "").replace(/,/g, "").trim());
+    return Number.isFinite(n) ? n : null;
+  }
+
+  return String(value ?? "").toLowerCase().trim();
+}
+
+function sortDashboardRows(rows: Row[], sortColumn: string | null, sortDirection: "asc" | "desc") {
+  if (!sortColumn) return rows;
+
+  return [...rows].sort((a, b) => {
+    const aVal = getDashboardSortValue(a, sortColumn);
+    const bVal = getDashboardSortValue(b, sortColumn);
+
+    if (aVal === null && bVal === null) return 0;
+    if (aVal === null) return sortDirection === "asc" ? 1 : -1;
+    if (bVal === null) return sortDirection === "asc" ? -1 : 1;
+
+    if (aVal < bVal) return sortDirection === "asc" ? -1 : 1;
+    if (aVal > bVal) return sortDirection === "asc" ? 1 : -1;
+
+    return 0;
+  });
+}
+
 function buildMapPopupData(row: Row): Row {
   return {
     "Pole ID": row["Pole ID"] ?? "",
@@ -520,15 +577,13 @@ export default function Home() {
     setTableLoading(true);
 
     try {
-      const pageSize = rowsPerPage;
-      const from = (currentPage - 1) * rowsPerPage;
-      const to = from + rowsPerPage - 1;
+      const canUseServerSort = isServerSortableColumn(sortColumn);
 
       let query = supabase
         .from("poles")
         .select("pole_id, latitude, longitude, phi, date_tested, data, comments", {
           count: "exact",
-        })  
+        })
         .eq("org_id", orgId);
 
       if (phiFilter === "lte69") query = query.lte("phi", 69);
@@ -538,53 +593,117 @@ export default function Home() {
       if (dateFrom) query = query.gte("date_tested", dateFrom);
       if (dateTo) query = query.lte("date_tested", dateTo);
 
-      const sortKey = getServerSortColumn(sortColumn);
-      query = query.order(sortKey, { ascending: sortDirection === "asc" });
-
-      query = query.range(from, to);
-
-      const { data, error, count } = await query;
-
-      if (error) throw error;
-
       const nextComments: Record<string, string> = {};
-      const rows: Row[] = (data ?? []).map((r: any) => {
-        if (r.comments !== undefined && r.comments !== null && String(r.comments).trim() !== "") {
-          nextComments[r.pole_id] = String(r.comments);
+      let rows: Row[] = [];
+      let totalCount = 0;
+
+      if (canUseServerSort) {
+        const from = (currentPage - 1) * rowsPerPage;
+        const to = from + rowsPerPage - 1;
+
+        const sortKey = getServerSortColumn(sortColumn);
+        query = query.order(sortKey, { ascending: sortDirection === "asc" });
+        query = query.range(from, to);
+
+        const { data, error, count } = await query;
+
+        if (error) throw error;
+
+        totalCount = count ?? data?.length ?? 0;
+
+        rows = (data ?? []).map((r: any) => {
+          if (
+            r.comments !== undefined &&
+            r.comments !== null &&
+            String(r.comments).trim() !== ""
+          ) {
+            nextComments[r.pole_id] = String(r.comments);
+          }
+
+          return {
+            "Pole ID": r.pole_id,
+            Latitude: r.latitude,
+            Longitude: r.longitude,
+            ...(r.data ?? {}),
+            Comments: r.comments ?? "",
+          };
+        });
+      } else {
+        const pageSize = 1000;
+        let from = 0;
+        let allRows: Row[] = [];
+
+        while (true) {
+          let allQuery = supabase
+            .from("poles")
+            .select("pole_id, latitude, longitude, phi, date_tested, data, comments", {
+              count: from === 0 ? "exact" : undefined,
+            })
+            .eq("org_id", orgId);
+
+          if (phiFilter === "lte69") allQuery = allQuery.lte("phi", 69);
+          if (phiFilter === "70to89") allQuery = allQuery.gte("phi", 70).lte("phi", 89);
+          if (phiFilter === "gte90") allQuery = allQuery.gte("phi", 90);
+
+          if (dateFrom) allQuery = allQuery.gte("date_tested", dateFrom);
+          if (dateTo) allQuery = allQuery.lte("date_tested", dateTo);
+
+          const { data, error, count } = await allQuery.range(from, from + pageSize - 1);
+
+          if (error) throw error;
+
+          if (from === 0) {
+            totalCount = count ?? 0;
+          }
+
+          if (!data || data.length === 0) break;
+
+          const chunkRows: Row[] = data.map((r: any) => {
+            if (
+              r.comments !== undefined &&
+              r.comments !== null &&
+              String(r.comments).trim() !== ""
+            ) {
+              nextComments[r.pole_id] = String(r.comments);
+            }
+
+            return {
+              "Pole ID": r.pole_id,
+              Latitude: r.latitude,
+              Longitude: r.longitude,
+              ...(r.data ?? {}),
+              Comments: r.comments ?? "",
+            };
+          });
+
+          allRows.push(...chunkRows);
+
+          if (data.length < pageSize) break;
+          from += pageSize;
         }
 
-        return {
-          "Pole ID": r.pole_id,
-          Latitude: r.latitude,
-          Longitude: r.longitude,
-          ...(r.data ?? {}),
-          Comments: r.comments ?? "",
-        };
-      });
+        const sortedRows = sortDashboardRows(allRows, sortColumn, sortDirection);
+
+        rows = sortedRows.slice(
+          (currentPage - 1) * rowsPerPage,
+          currentPage * rowsPerPage
+        );
+
+        if (!totalCount) {
+          totalCount = allRows.length;
+        }
+      }
 
       setCommentsByPole((prev) => ({ ...prev, ...nextComments }));
-      let finalRows = rows;
-
-      if (sortColumn === "Status") {
-        finalRows = [...rows].sort((a, b) => {
-          const aVal = String(a["Status"] ?? "").toLowerCase();
-          const bVal = String(b["Status"] ?? "").toLowerCase();
-
-          if (aVal < bVal) return sortDirection === "asc" ? -1 : 1;
-          if (aVal > bVal) return sortDirection === "asc" ? 1 : -1;
-          return 0;
-        });
-      }
-
-      setTableRows(finalRows);
-      setTableTotalRows(count ?? rows.length);
-        } catch (e) {
-          console.error("loadTablePage failed:", e);
-        } finally {
-          setTableLoading(false);
-          setLastRefresh(new Date().toLocaleTimeString());
-        }
-      }
+      setTableRows(rows);
+      setTableTotalRows(totalCount);
+    } catch (e) {
+      console.error("loadTablePage failed:", e);
+    } finally {
+      setTableLoading(false);
+      setLastRefresh(new Date().toLocaleTimeString());
+    }
+  }
 
   async function loadMapRows(orgId: string) {
     if (!orgId) return;
@@ -1674,8 +1793,10 @@ export default function Home() {
                       key={h}
                       className="border p-2 whitespace-nowrap cursor-pointer select-none hover:bg-gray-300"
                       onClick={() => {
+                        setCurrentPage(1);
+
                         if (sortColumn === h) {
-                          setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+                          setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
                         } else {
                           setSortColumn(h);
                           setSortDirection("asc");
