@@ -96,6 +96,44 @@ function getPoleStatus(row: any) {
     .toLowerCase();
 }
 
+function getMaintenanceCellValue(row: MaintenancePoleRow, column: string) {
+  if (column === "Pole ID") return row.pole_id ?? "";
+  if (column === "Latitude") return row.latitude ?? row.raw_data?.["Latitude"] ?? "";
+  if (column === "Longitude") return row.longitude ?? row.raw_data?.["Longitude"] ?? "";
+  if (column === "Comments") return row.comments ?? row.raw_data?.["Comments"] ?? "";
+
+  return row.raw_data?.[column] ?? "";
+}
+
+function getMaintenanceSortValue(row: MaintenancePoleRow, column: string) {
+  const value = getMaintenanceCellValue(row, column);
+
+  if (column === "Date Tested") {
+    const date = new Date(String(value));
+    return Number.isNaN(date.getTime()) ? null : date.getTime();
+  }
+
+  const numericColumns = [
+    "Latitude",
+    "Longitude",
+    "Pole Health Index(PHI)",
+    "Foundation Health Index(FHI)",
+    "RSV (%)",
+    "Pole Length (ft)",
+    "Measured Diameter (inches)",
+    "OHMS",
+    "Ground Rods",
+    "OHMS Rod 1",
+  ];
+
+  if (numericColumns.includes(column)) {
+    const n = Number(String(value ?? "").replace(/,/g, "").trim());
+    return Number.isFinite(n) ? n : null;
+  }
+
+  return String(value ?? "").toLowerCase().trim();
+}
+
 function normalizePoleRow(row: any): MaintenancePoleRow {
   const raw = row.raw_data ?? row.data ?? row;
 
@@ -316,6 +354,22 @@ export default function ReportsPage() {
         );
 
         return !Number.isNaN(phi) && phi >= 90;
+      });
+    }
+
+    if (sortColumn) {
+      filteredRows = [...filteredRows].sort((a, b) => {
+        const aVal = getMaintenanceSortValue(a, sortColumn);
+        const bVal = getMaintenanceSortValue(b, sortColumn);
+
+        if (aVal === null && bVal === null) return 0;
+        if (aVal === null) return sortDirection === "asc" ? 1 : -1;
+        if (bVal === null) return sortDirection === "asc" ? -1 : 1;
+
+        if (aVal < bVal) return sortDirection === "asc" ? -1 : 1;
+        if (aVal > bVal) return sortDirection === "asc" ? 1 : -1;
+
+        return 0;
       });
     }
 
@@ -828,7 +882,7 @@ export default function ReportsPage() {
               sortDirection={sortDirection}
               onSort={(column) => {
                 if (sortColumn === column) {
-                  setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+                  setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
                 } else {
                   setSortColumn(column);
                   setSortDirection("asc");
