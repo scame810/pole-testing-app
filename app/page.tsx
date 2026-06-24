@@ -379,49 +379,94 @@ export default function Home() {
     setSelectedPoleId(normalizedId);
 
     try {
-      const sortKey = getServerSortColumn(sortColumn);
-      const ascending = sortDirection === "asc";
-
       const pageSize = 1000;
       let from = 0;
       let index = -1;
 
-      while (true) {
-        let query = supabase
-          .from("poles")
-          .select("pole_id")
-          .eq("org_id", activeOrgId);
+      const canUseServerSort = isServerSortableColumn(sortColumn);
 
-        if (phiFilter === "lte69") query = query.lte("phi", 69);
-        if (phiFilter === "70to89") query = query.gte("phi", 70).lte("phi", 89);
-        if (phiFilter === "gte90") query = query.gte("phi", 90);
+      if (canUseServerSort) {
+        const sortKey = getServerSortColumn(sortColumn);
+        const ascending = sortDirection === "asc";
 
-        if (dateFrom) query = query.gte("date_tested", dateFrom);
-        if (dateTo) query = query.lte("date_tested", dateTo);
+        while (true) {
+          let query = supabase
+            .from("poles")
+            .select("pole_id")
+            .eq("org_id", activeOrgId);
 
-        query = query
-          .order(sortKey, { ascending })
-          .range(from, from + pageSize - 1);
+          if (phiFilter === "lte69") query = query.lte("phi", 69);
+          if (phiFilter === "70to89") query = query.gte("phi", 70).lte("phi", 89);
+          if (phiFilter === "gte90") query = query.gte("phi", 90);
 
-        const { data, error } = await query;
-        if (error) throw error;
-        if (!data || data.length === 0) break;
+          if (dateFrom) query = query.gte("date_tested", dateFrom);
+          if (dateTo) query = query.lte("date_tested", dateTo);
 
-        const ids = data.map((r: any) => normalizePoleId(r.pole_id));
-        const localIndex = ids.indexOf(normalizedId);
+          query = query
+            .order(sortKey, { ascending })
+            .range(from, from + pageSize - 1);
 
-        if (localIndex !== -1) {
-          index = from + localIndex;
-          break;
+          const { data, error } = await query;
+          if (error) throw error;
+          if (!data || data.length === 0) break;
+
+          const ids = data.map((r: any) => normalizePoleId(r.pole_id));
+          const localIndex = ids.indexOf(normalizedId);
+
+          if (localIndex !== -1) {
+            index = from + localIndex;
+            break;
+          }
+
+          if (data.length < pageSize) break;
+          from += pageSize;
+        }
+      } else {
+        let allRows: Row[] = [];
+
+        while (true) {
+          let query = supabase
+            .from("poles")
+            .select("pole_id, latitude, longitude, phi, date_tested, data, comments")
+            .eq("org_id", activeOrgId)
+            .range(from, from + pageSize - 1);
+
+          if (phiFilter === "lte69") query = query.lte("phi", 69);
+          if (phiFilter === "70to89") query = query.gte("phi", 70).lte("phi", 89);
+          if (phiFilter === "gte90") query = query.gte("phi", 90);
+
+          if (dateFrom) query = query.gte("date_tested", dateFrom);
+          if (dateTo) query = query.lte("date_tested", dateTo);
+
+          const { data, error } = await query;
+          if (error) throw error;
+          if (!data || data.length === 0) break;
+
+          const rows: Row[] = data.map((r: any) => ({
+            "Pole ID": r.pole_id,
+            Latitude: r.latitude,
+            Longitude: r.longitude,
+            ...(r.data ?? {}),
+            Comments: r.comments ?? "",
+          }));
+
+          allRows.push(...rows);
+
+          if (data.length < pageSize) break;
+          from += pageSize;
         }
 
-        if (data.length < pageSize) break;
-        from += pageSize;
+        const sortedRows = sortDashboardRows(allRows, sortColumn, sortDirection);
+
+        index = sortedRows.findIndex(
+          (row) => normalizePoleId(getPoleId(row)) === normalizedId
+        );
       }
 
       if (index === -1) return;
 
       const page = Math.floor(index / rowsPerPage) + 1;
+
       if (page !== currentPage) {
         setCurrentPage(page);
       }
@@ -1108,7 +1153,7 @@ export default function Home() {
 
     if (!targetId) return;
 
-    const raf = requestAnimationFrame(() => {
+    const t = window.setTimeout(() => {
       const row = rowRefs.current[targetId];
 
       if (row) {
@@ -1116,16 +1161,13 @@ export default function Home() {
           behavior: "smooth",
           block: "center",
         });
+
         pendingScrollPoleIdRef.current = null;
       }
-    });
+    }, 100);
 
-    return () => cancelAnimationFrame(raf);
-  }, [selectedPoleId, paginatedRows, currentPage]);
-
-  useEffect(() => {
-    rowRefs.current = {};
-  }, [paginatedRows]);
+    return () => window.clearTimeout(t);
+  }, [selectedPoleId, paginatedRows, currentPage, tableLoading]);
 
   useEffect(() => {
     setCurrentPage(1);
