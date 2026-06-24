@@ -330,13 +330,17 @@ export default function Home() {
   }
 
   function saveCommentToSupabase(poleId: string, comment: string) {
-    if (saveTimersRef.current[poleId]) clearTimeout(saveTimersRef.current[poleId]);
+    if (!poleId) return;
 
-    setCommentSaveStatus((prev) => ({ ...prev, [poleId]: "saving" }));
+    if (saveTimersRef.current[poleId]) {
+      clearTimeout(saveTimersRef.current[poleId]);
+    }
 
     saveTimersRef.current[poleId] = setTimeout(async () => {
       try {
         if (!activeOrgId) throw new Error("No activeOrgId selected");
+
+        setCommentSaveStatus((prev) => ({ ...prev, [poleId]: "saving" }));
 
         const { error } = await supabase
           .from("poles")
@@ -346,7 +350,6 @@ export default function Home() {
 
         if (error) throw error;
 
-        setCommentsByPole((prev) => ({ ...prev, [poleId]: comment }));
         setCommentSaveStatus((prev) => ({ ...prev, [poleId]: "saved" }));
 
         setTimeout(() => {
@@ -359,7 +362,7 @@ export default function Home() {
         console.error("Save comment failed:", e);
         setCommentSaveStatus((prev) => ({ ...prev, [poleId]: "error" }));
       }
-    }, 500);
+    }, 900);
   }
 
   function selectPole(poleId: string) {

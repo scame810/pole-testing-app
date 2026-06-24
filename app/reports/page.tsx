@@ -501,8 +501,6 @@ export default function ReportsPage() {
       clearTimeout(saveTimersRef.current[poleId]);
     }
 
-    setCommentSaveStatus((prev) => ({ ...prev, [poleId]: "saving" }));
-
     saveTimersRef.current[poleId] = setTimeout(async () => {
       try {
         const { error } = await supabase
@@ -515,12 +513,6 @@ export default function ReportsPage() {
 
         setCommentSaveStatus((prev) => ({ ...prev, [poleId]: "saved" }));
 
-        setMaintenanceRows((prev) =>
-          prev.map((row) =>
-            row.pole_id === poleId ? { ...row, comments: comment } : row
-          )
-        );
-
         setTimeout(() => {
           setCommentSaveStatus((prev) => ({
             ...prev,
@@ -531,7 +523,7 @@ export default function ReportsPage() {
         console.error("Save comment failed:", e);
         setCommentSaveStatus((prev) => ({ ...prev, [poleId]: "error" }));
       }
-    }, 500);
+    }, 900);
   }
 
   function exportRowsToCsv(
@@ -875,8 +867,14 @@ export default function ReportsPage() {
               commentSaveStatus={commentSaveStatus}
               canEditComments={canEditComments}
               onCommentChange={(poleId, next) => {
-                setCommentsByPole((prev) => ({ ...prev, [poleId]: next }));
-                saveCommentToSupabase(poleId, next);
+                setCommentsByPole((prev) => ({
+                  ...prev,
+                  [poleId]: next,
+                }));
+
+                if (poleId) {
+                  saveCommentToSupabase(poleId, next);
+                }
               }}
               sortColumn={sortColumn}
               sortDirection={sortDirection}
