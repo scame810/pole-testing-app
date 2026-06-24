@@ -1946,6 +1946,10 @@ export default function Home() {
                                   if (poleId) saveCommentToSupabase(poleId, next);
                                 }}
                                 placeholder="Add notes..."
+                                spellCheck={false}
+                                autoCorrect="off"
+                                autoCapitalize="none"
+                                autoComplete="off"
                                 className="w-full min-h-[60px] p-2 border rounded-md text-sm"
                               />
                             ) : (

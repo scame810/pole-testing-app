@@ -263,6 +263,10 @@ export default function MaintenancePolesTable({
                             value={value}
                             onChange={(e) => onCommentChange(poleId, e.target.value)}
                             placeholder="Add notes..."
+                            spellCheck={false}
+                            autoCorrect="off"
+                            autoCapitalize="none"
+                            autoComplete="off"
                             className="w-full min-h-[60px] p-2 border rounded-md text-sm"
                           />
                         ) : (
